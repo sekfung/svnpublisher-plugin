@@ -79,7 +79,7 @@ public class SVNWorker {
         ISVNOptions options;
 
         File configDir = SVNWCUtil.getDefaultConfigurationDirectory();
-        sam = SVNWCUtil.createDefaultAuthenticationManager(configDir, null, null);
+        sam = SVNWCUtil.createDefaultAuthenticationManager(configDir);
         sam.setAuthenticationProvider(new CredentialsSVNAuthenticationProviderImpl(credentials));
         options = SVNWCUtil.createDefaultOptions(configDir, true);
 

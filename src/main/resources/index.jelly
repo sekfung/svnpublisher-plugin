@@ -1,3 +1,4 @@
+<?jelly escape-by-default='true'?>
 <div>
   This plugin allows you to upload artifacts to a subversion repository.
   This is done via a delete/import of the items requested.
