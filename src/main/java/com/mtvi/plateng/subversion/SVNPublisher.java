@@ -11,19 +11,10 @@ import com.cloudbees.plugins.credentials.common.StandardUsernamePasswordCredenti
 import com.cloudbees.plugins.credentials.domains.DomainRequirement;
 import com.cloudbees.plugins.credentials.domains.URIRequirementBuilder;
 import com.google.common.collect.Lists;
-import hudson.EnvVars;
-import hudson.Extension;
-import hudson.Launcher;
-import hudson.model.AbstractBuild;
-import hudson.model.AbstractProject;
-import hudson.model.BuildListener;
-import hudson.model.Item;
-import hudson.model.TaskListener;
+import hudson.*;
+import hudson.model.*;
 import hudson.security.ACL;
-import hudson.tasks.BuildStepDescriptor;
-import hudson.tasks.BuildStepMonitor;
-import hudson.tasks.Notifier;
-import hudson.tasks.Publisher;
+import hudson.tasks.*;
 import hudson.util.FormValidation;
 import hudson.util.ListBoxModel;
 import java.io.File;
@@ -33,11 +24,15 @@ import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Logger;
+
+import jenkins.tasks.SimpleBuildStep;
 import org.kohsuke.stapler.AncestorInPath;
 
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.QueryParameter;
 import org.tmatesoft.svn.core.SVNException;
+
+import javax.annotation.Nonnull;
 
 /**
  * The jenkins plugin wrapper is based off of (and on occasion copied verbatim
@@ -46,7 +41,7 @@ import org.tmatesoft.svn.core.SVNException;
  * @author bsmith
  *
  */
-public class SVNPublisher extends Notifier {
+public class SVNPublisher extends Recorder implements SimpleBuildStep {
 
     @Extension
     public static final DescriptorImpl DESCRIPTOR = new DescriptorImpl();
@@ -99,45 +94,38 @@ public class SVNPublisher extends Notifier {
         return newArts;
     }
 
+    public BuildStepMonitor getRequiredMonitorService() {
+        return BuildStepMonitor.BUILD;
+    }
+
     @Override
-    public boolean perform(AbstractBuild build, Launcher launcher, BuildListener listener) {
-        PrintStream buildLogger = listener.getLogger();
-        
+    public void perform(@Nonnull Run<?, ?> run, @Nonnull FilePath filePath, @Nonnull Launcher launcher, @Nonnull TaskListener taskListener) throws InterruptedException, IOException {
+        PrintStream buildLogger = taskListener.getLogger();
+
         String workspace;
         try {
-            EnvVars envVars = build.getEnvironment(listener);
-            if (target.trim().equals(""))
+            EnvVars envVars = run.getEnvironment(taskListener);
+            if ("".equalsIgnoreCase(this.target.trim()))
                 target = envVars.get("WORKSPACE");
-           
-            workspace = envVars.get("WORKSPACE") + SVNWorker.systemSeparator + "svnpublisher";
-            SVNWorker repo = new SVNWorker(SVNWorker.replaceVars(envVars, this.svnUrl),  workspace,  SVNWorker.replaceVars(envVars,this.target), DescriptorImpl.lookupCredentials(this.svnUrl, build.getProject(), this.credentialsId));
-            try {                
+            workspace = envVars.get("WORKSPACE");
+            SVNWorker repo = new SVNWorker(SVNWorker.replaceVars(envVars, this.svnUrl),  workspace,  SVNWorker.replaceVars(envVars,this.target), DescriptorImpl.lookupCredentials(this.svnUrl, run.getParent(), this.credentialsId));
+            try {
                 List<ImportItem> artifact = SVNWorker.parseAndReplaceEnvVars(envVars, cloneItems(this.artifacts));
                 if (repo.createWorkingCopy(artifact).isEmpty()){
                     repo.dispose();
-                    return true;
                 }
                 repo.setCommitMessage(SVNWorker.replaceVars(envVars,commitMessage));
                 repo.commit();
-         
             } catch (SVNPublisherException ex) {
                 buildLogger.println(ex.getMessage());
-                return false;
+                throw new AbortException(ex.getMessage());
             } finally {
-                repo.dispose();                
+                repo.dispose();
             }
-        } catch (IOException ex) {
+        } catch (IOException | InterruptedException ex) {
             buildLogger.println(ex.getMessage());
-             return false;
-        } catch (InterruptedException ex) {
-            buildLogger.println(ex.getMessage());
-            return false;
+            throw new AbortException(ex.getMessage());
         }
-        return true;
-    }
-
-    public BuildStepMonitor getRequiredMonitorService() {
-        return BuildStepMonitor.BUILD;
     }
 
     public static final class DescriptorImpl extends BuildStepDescriptor<Publisher> {
@@ -161,7 +149,7 @@ public class SVNPublisher extends Notifier {
 
         public <P extends AbstractProject> FormValidation doCheckCredentialsId(@AncestorInPath Item context, @QueryParameter("svnUrl") final String url, @QueryParameter("credentialsId") final String credentialsId) {
             try {
-                Credentials cred = DescriptorImpl.lookupCredentials(url, (P) context, credentialsId);
+                Credentials cred = DescriptorImpl.lookupCredentials(url, context, credentialsId);
                 SVNWorker svn = new SVNWorker(url, cred);
                 svn.getSVNRepository().getRepositoryPath("/");
 
@@ -172,6 +160,9 @@ public class SVNPublisher extends Notifier {
         }
         
         public <P extends AbstractProject> FormValidation doCheckSvnURL(@AncestorInPath Item context, @QueryParameter("svnUrl") final String url, @QueryParameter("credentialsId") final String credentialsId) {
+            if ("".equalsIgnoreCase(url)) {
+                return FormValidation.error("svn url is not valid");
+            }
             return doCheckCredentialsId(context,url,credentialsId);
         }
         
@@ -181,12 +172,10 @@ public class SVNPublisher extends Notifier {
             try {
                 File f  = new File(SVNWorker.replaceVars(project.getSomeBuildWithWorkspace().getEnvironment(TaskListener.NULL), target));
                 if (!f.exists()) return FormValidation.error("Path does not exists");
-            } catch (IOException ex) {
-                return FormValidation.error(ex.getMessage());
-            } catch (InterruptedException ex) {
+            } catch (IOException | InterruptedException ex) {
                 return FormValidation.error(ex.getMessage());
             }
-             return FormValidation.ok();
+            return FormValidation.ok();
          }    
 
         public ListBoxModel doFillCredentialsIdItems(@AncestorInPath Item context, @QueryParameter String svnUrl) {
@@ -207,14 +196,13 @@ public class SVNPublisher extends Notifier {
                     );
         }
 
-        private static <P extends AbstractProject> Credentials lookupCredentials(String repoUrl, P context, String credentialsId) {
-            Credentials credentials = credentialsId == null ? null : CredentialsMatchers
+        private static Credentials lookupCredentials(String repoUrl, Item context, String credentialsId) {
+            return credentialsId == null ? null : CredentialsMatchers
                     .firstOrNull(CredentialsProvider.lookupCredentials(StandardCredentials.class, context,
                                     ACL.SYSTEM, URIRequirementBuilder.fromUri(repoUrl).build()),
                             CredentialsMatchers.allOf(CredentialsMatchers.withId(credentialsId),
                                     CredentialsMatchers.anyOf(CredentialsMatchers.instanceOf(StandardCredentials.class),
                                             CredentialsMatchers.instanceOf(SSHUserPrivateKey.class))));
-            return credentials;
         }
     }
 

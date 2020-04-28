@@ -2,6 +2,7 @@ package com.mtvi.plateng.subversion;
 
 import com.cloudbees.plugins.credentials.Credentials;
 import com.google.common.collect.Lists;
+import hudson.AbortException;
 import hudson.EnvVars;
 import hudson.scm.CredentialsSVNAuthenticationProviderImpl;
 import java.io.File;
@@ -10,6 +11,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.List;
+import java.util.Objects;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
@@ -17,11 +19,7 @@ import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 import org.apache.commons.io.FileUtils;
 import org.springframework.util.StringUtils;
-import org.tmatesoft.svn.core.SVNCommitInfo;
-import org.tmatesoft.svn.core.SVNDepth;
-import org.tmatesoft.svn.core.SVNException;
-import org.tmatesoft.svn.core.SVNNodeKind;
-import org.tmatesoft.svn.core.SVNURL;
+import org.tmatesoft.svn.core.*;
 import org.tmatesoft.svn.core.auth.ISVNAuthenticationManager;
 import org.tmatesoft.svn.core.internal.io.dav.DAVRepositoryFactory;
 import org.tmatesoft.svn.core.io.SVNRepository;
@@ -138,7 +136,7 @@ public class SVNWorker {
             Field[] fields;
             fields = a.getClass().getDeclaredFields();
             for (Field f : fields) {
-                if (f.getType().isInstance(new String())) {
+                if (f.getType().isInstance("")) {
                     String capitalName = StringUtils.capitalize(f.getName());
                     try {
                         Method invokeSet = a.getClass().getDeclaredMethod("set" + capitalName, String.class);
@@ -146,17 +144,7 @@ public class SVNWorker {
 
                         invokeSet.invoke(a, replaceVars(vars, (String) invokeGet.invoke(a)));
 
-                    } catch (NoSuchMethodException ex) {
-                        LOGGER.log(Level.FINEST, "{0} {1}", new Object[]{f.getName(), ex.getMessage()});
-                    } catch (SecurityException ex) {
-                        LOGGER.log(Level.FINEST, "{0} {1}", new Object[]{f.getName(), ex.getMessage()});
-                    } catch (IllegalAccessException ex) {
-                        LOGGER.log(Level.FINEST, "{0} {1}", new Object[]{f.getName(), ex.getMessage()});
-                    } catch (IllegalArgumentException ex) {
-                        LOGGER.log(Level.FINEST, "{0} {1}", new Object[]{f.getName(), ex.getMessage()});
-                    } catch (InvocationTargetException ex) {
-                        LOGGER.log(Level.FINEST, "{0} {1}", new Object[]{f.getName(), ex.getMessage()});
-                    } catch (NullPointerException ex) {
+                    } catch (NoSuchMethodException | SecurityException | IllegalAccessException | IllegalArgumentException | InvocationTargetException | NullPointerException ex) {
                         LOGGER.log(Level.FINEST, "{0} {1}", new Object[]{f.getName(), ex.getMessage()});
                     }
                 }
@@ -167,9 +155,9 @@ public class SVNWorker {
 
     public static String replaceVars(EnvVars vars, String original) {
         String replaced = original;
-        if (Pattern.matches("\\$\\{.*}\\}", original)) {
+        if (Pattern.matches("\\$\\{.*}}", original)) {
             for (String k : vars.keySet()) {
-                Pattern p = Pattern.compile("\\$\\{" + k + "\\}");
+                Pattern p = Pattern.compile("\\$\\{" + k + "}");
 
                 Matcher m = p.matcher(replaced);
                 if (m.find()) {
@@ -186,8 +174,10 @@ public class SVNWorker {
         return manager.getWCClient().doGetProperty(svnPath, null, SVNRevision.HEAD, SVNRevision.HEAD);
     }
 
-    private void addDir(File workingcopy) throws SVNException {
-        workingcopy.mkdirs();
+    private void addDir(File workingcopy) throws SVNException, SVNPublisherException {
+        if (workingcopy.mkdirs()) {
+            throw new SVNPublisherException("create workcopy failed");
+        }
         manager.getWCClient().doAdd(workingcopy, false, true, false, SVNDepth.INFINITY, false, false, true);
     }
 
@@ -254,7 +244,7 @@ public class SVNWorker {
 
         try {
             Pattern p = Pattern.compile(filePattern);
-            for (File f : baseDir.listFiles()) {
+            for (File f : Objects.requireNonNull(baseDir.listFiles())) {
                 if (f.isDirectory()) {
                     continue;
                 }
