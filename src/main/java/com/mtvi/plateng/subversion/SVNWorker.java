@@ -4,19 +4,24 @@ import com.cloudbees.plugins.credentials.Credentials;
 import com.google.common.collect.Lists;
 import hudson.AbortException;
 import hudson.EnvVars;
+import hudson.FilePath;
 import hudson.scm.CredentialsSVNAuthenticationProviderImpl;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
+import java.util.stream.Collectors;
+
 import org.apache.commons.io.FileUtils;
 import org.springframework.util.StringUtils;
 import org.tmatesoft.svn.core.*;
@@ -88,7 +93,6 @@ public class SVNWorker {
 
     private static void cleanWorkspace(String workspace) {
         File f = new File(workspace);
-
         try {
             if (f.exists()) {
                 FileUtils.deleteDirectory(f);
@@ -175,7 +179,7 @@ public class SVNWorker {
     }
 
     private void addDir(File workingcopy) throws SVNException, SVNPublisherException {
-        if (workingcopy.mkdirs()) {
+        if (!workingcopy.mkdirs()) {
             throw new SVNPublisherException("create workcopy failed");
         }
         manager.getWCClient().doAdd(workingcopy, false, true, false, SVNDepth.INFINITY, false, false, true);
@@ -235,30 +239,21 @@ public class SVNWorker {
     }
 
     public static List<File> findFilesWithPattern(String path, String filePattern) throws SVNPublisherException {
-        List<File> files = Lists.newArrayList();
-
-        File baseDir = new File(path);
-        if (!baseDir.exists()) {
-            throw new SVNPublisherException("Path does not exists "+path);
-        }
-
         try {
-            Pattern p = Pattern.compile(filePattern);
-            for (File f : Objects.requireNonNull(baseDir.listFiles())) {
-                if (f.isDirectory()) {
-                    continue;
-                }
-
-                Matcher m = p.matcher(f.getName());
-                while (m.find()) {
-                    files.add(f);
-                }
+            File baseDir = new File(path);
+            FilePath filePath = new FilePath(baseDir);
+            if (!filePath.exists()) {
+                throw new SVNPublisherException("Path does not exists "+path);
             }
+            ListFiles listFiles = new ListFiles(filePattern, "");
+            Map<String, String> files = filePath.act(listFiles);
+            return files.values().stream().map(File::new).collect(Collectors.toList());
         } catch (PatternSyntaxException e) {
             throw new SVNPublisherException("Invalid pattern file for " + filePattern);
+        } catch (InterruptedException | IOException e) {
+            e.printStackTrace();
+            throw new SVNPublisherException("Invalid pattern file for " + e.getMessage());
         }
-
-        return files;
     }
 
     public void commit() throws SVNPublisherException {

@@ -88,8 +88,10 @@ public class SVNPublisher extends Recorder implements SimpleBuildStep {
 
     private List<ImportItem> cloneItems(List<ImportItem> oldArtifacts) {
         List<ImportItem> newArts = Lists.newArrayList();
-        for (ImportItem a : oldArtifacts) {
-            newArts.add(new ImportItem(a));
+        if (oldArtifacts != null) {
+            for (ImportItem a : oldArtifacts) {
+                newArts.add(new ImportItem(a));
+            }
         }
         return newArts;
     }
@@ -107,7 +109,7 @@ public class SVNPublisher extends Recorder implements SimpleBuildStep {
             EnvVars envVars = run.getEnvironment(taskListener);
             if ("".equalsIgnoreCase(this.target.trim()))
                 target = envVars.get("WORKSPACE");
-            workspace = envVars.get("WORKSPACE");
+            workspace = envVars.get("WORKSPACE") + SVNWorker.systemSeparator + "svnpublisher";
             SVNWorker repo = new SVNWorker(SVNWorker.replaceVars(envVars, this.svnUrl),  workspace,  SVNWorker.replaceVars(envVars,this.target), DescriptorImpl.lookupCredentials(this.svnUrl, run.getParent(), this.credentialsId));
             try {
                 List<ImportItem> artifact = SVNWorker.parseAndReplaceEnvVars(envVars, cloneItems(this.artifacts));
@@ -148,11 +150,16 @@ public class SVNPublisher extends Recorder implements SimpleBuildStep {
         }
 
         public <P extends AbstractProject> FormValidation doCheckCredentialsId(@AncestorInPath Item context, @QueryParameter("svnUrl") final String url, @QueryParameter("credentialsId") final String credentialsId) {
+            if ("".equalsIgnoreCase(credentialsId.trim())) {
+                return FormValidation.error("credential is not valid");
+            }
             try {
                 Credentials cred = DescriptorImpl.lookupCredentials(url, context, credentialsId);
                 SVNWorker svn = new SVNWorker(url, cred);
+                if (svn.getSVNRepository() == null) {
+                    return FormValidation.error("Can not connect to repository");
+                }
                 svn.getSVNRepository().getRepositoryPath("/");
-
                 return FormValidation.ok("Connected to repository");
             } catch (SVNException ex) {
                 return FormValidation.error(ex.getErrorMessage().getMessage());
@@ -160,14 +167,14 @@ public class SVNPublisher extends Recorder implements SimpleBuildStep {
         }
         
         public <P extends AbstractProject> FormValidation doCheckSvnURL(@AncestorInPath Item context, @QueryParameter("svnUrl") final String url, @QueryParameter("credentialsId") final String credentialsId) {
-            if ("".equalsIgnoreCase(url)) {
+            if ("".equalsIgnoreCase(url.trim())) {
                 return FormValidation.error("svn url is not valid");
             }
             return doCheckCredentialsId(context,url,credentialsId);
         }
         
         public <P extends AbstractProject> FormValidation doCheckTarget(@AncestorInPath AbstractProject project, @QueryParameter("target") final String target){
-             if (target.trim().equals(""))
+             if ("".equalsIgnoreCase(target.trim()))
                  return FormValidation.error("Path is not valid");             
             try {
                 File f  = new File(SVNWorker.replaceVars(project.getSomeBuildWithWorkspace().getEnvironment(TaskListener.NULL), target));
