@@ -35,7 +35,28 @@ public class ImportItem extends AbstractDescribableImpl<ImportItem>{
      * The name to be used when placing an item in the repository.
      */
     private String name;
+    /**
+     * The variable used to trigger uploading. "," (comma) is the only supported separator.
+     */
+    private String variables;
     
+
+
+//    /**
+//     * @param pattern	The pattern to be used to find matching files/folders.
+//     * @param path	The path within the project repository where matched items
+//     * are to be placed.
+//     * @param localPath	The local path, relative to base path where the files will be searched
+//     * @param name	The name given to items when they are placed in the
+//     * repository.
+//     */
+//    @DataBoundConstructor
+//    public ImportItem(String pattern, String path, String localPath, String name) {
+//        this.pattern = pattern;
+//        this.path = path;
+//        this.name = name;
+//        this.localPath = localPath;
+//    }
 
 
     /**
@@ -47,12 +68,15 @@ public class ImportItem extends AbstractDescribableImpl<ImportItem>{
      * repository.
      */
     @DataBoundConstructor
-    public ImportItem(String pattern, String path, String localPath, String name) {
+    public ImportItem(String pattern, String path, String localPath, String name, String variables) {
         this.pattern = pattern;
         this.path = path;
         this.name = name;
         this.localPath = localPath;
+        this.variables = variables;
     }
+
+
 
     /**
      * Use this constructor to clone another ImportItem
@@ -64,6 +88,7 @@ public class ImportItem extends AbstractDescribableImpl<ImportItem>{
         this.path = a.getPath();
         this.name = a.getName();
         this.localPath = a.getLocalPath();
+        this.variables = a.getVariables();
     }
 
       /**
@@ -142,6 +167,22 @@ public class ImportItem extends AbstractDescribableImpl<ImportItem>{
      */
     public void setLocalPath(String localPath) {
         this.localPath = localPath;
+    }
+
+    /**
+     * Set the variable used to trigger uploading
+     * @param variables
+     */
+    public void setVariables(String variables) {
+        this.variables = variables;
+    }
+
+    /**
+     * Get the variable used to trigger uploading
+     * @return the trigger variables, "," (comma) is the only supported separator.
+     */
+    public String getVariables() {
+        return variables;
     }
 
     @Extension

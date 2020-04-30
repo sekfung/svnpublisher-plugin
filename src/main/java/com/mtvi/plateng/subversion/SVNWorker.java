@@ -6,6 +6,14 @@ import hudson.AbortException;
 import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.scm.CredentialsSVNAuthenticationProviderImpl;
+import org.apache.commons.io.FileUtils;
+import org.springframework.util.StringUtils;
+import org.tmatesoft.svn.core.*;
+import org.tmatesoft.svn.core.auth.ISVNAuthenticationManager;
+import org.tmatesoft.svn.core.internal.io.dav.DAVRepositoryFactory;
+import org.tmatesoft.svn.core.io.SVNRepository;
+import org.tmatesoft.svn.core.wc.*;
+
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
@@ -14,7 +22,6 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
@@ -22,26 +29,12 @@ import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 import java.util.stream.Collectors;
 
-import org.apache.commons.io.FileUtils;
-import org.springframework.util.StringUtils;
-import org.tmatesoft.svn.core.*;
-import org.tmatesoft.svn.core.auth.ISVNAuthenticationManager;
-import org.tmatesoft.svn.core.internal.io.dav.DAVRepositoryFactory;
-import org.tmatesoft.svn.core.io.SVNRepository;
-import org.tmatesoft.svn.core.wc.ISVNOptions;
-import org.tmatesoft.svn.core.wc.SVNClientManager;
-import org.tmatesoft.svn.core.wc.SVNCommitClient;
-import org.tmatesoft.svn.core.wc.SVNCommitPacket;
-import org.tmatesoft.svn.core.wc.SVNPropertyData;
-import org.tmatesoft.svn.core.wc.SVNRevision;
-import org.tmatesoft.svn.core.wc.SVNWCUtil;
-
 /**
  * SVNForceImport can be used to import a maven project into an svn repository.
  * It has the ability to import numerous different files/folders based on
  * matching a regular expression pattern. Each matched item can be renamed and
  * placed in differing folders.
- *
+ * <p>
  * SVNForceImport can also read a projects pom file and extract Major Minor and
  * Patch version numbers.
  *
@@ -174,18 +167,16 @@ public class SVNWorker {
     }
 
     private SVNPropertyData checkoutDir(SVNURL svnPath, File workingcopy) throws SVNException {
-        manager.getUpdateClient().doCheckout(svnPath, workingcopy, SVNRevision.HEAD, SVNRevision.HEAD, SVNDepth.FILES, true);
+        manager.getUpdateClient().doCheckout(svnPath, workingcopy, SVNRevision.HEAD, SVNRevision.HEAD, SVNDepth.INFINITY, true);
         return manager.getWCClient().doGetProperty(svnPath, null, SVNRevision.HEAD, SVNRevision.HEAD);
     }
 
     private void addDir(File workingcopy) throws SVNException, SVNPublisherException {
-        if (!workingcopy.mkdirs()) {
-            throw new SVNPublisherException("create workcopy failed");
-        }
+        workingcopy.mkdirs();
         manager.getWCClient().doAdd(workingcopy, false, true, false, SVNDepth.INFINITY, false, false, true);
     }
 
-    public List<File> createWorkingCopy(List<ImportItem> item) throws SVNPublisherException {
+    public List<File> createWorkingCopy(List<ImportItem> item, EnvVars envVars) throws SVNPublisherException {
         List<File> files = Lists.newArrayList();
         try {
             cleanWorkspace(workingCopy);
@@ -204,7 +195,8 @@ public class SVNWorker {
                     checkoutDir(svnDestination, dir);
                 }
                 String localPath = this.baseLocalDir + SVNWorker.systemSeparator + i.getLocalPath();
-                List<File> filesToCopy = findFilesWithPattern(localPath, i.getPattern());
+                String[] variables = i.getVariables().split(",");
+                List<File> filesToCopy = findFilesWithPattern(localPath, i.getPattern(), variables, envVars);
                 for (File f : filesToCopy) {
                     try {
                         if (filesToCopy.size() == 1) {
@@ -229,25 +221,47 @@ public class SVNWorker {
                 }
             }
         } catch (SVNException e) {
-            throw new SVNPublisherException("Error in repository "+e.getMessage());
+            throw new SVNPublisherException("Error in repository " + e.getMessage());
         } catch (SVNPublisherException ex) {
             throw ex;
-        } catch (Exception ex1){
+        } catch (Exception ex1) {
             throw new SVNPublisherException(ex1);
         }
         return files;
     }
 
-    public static List<File> findFilesWithPattern(String path, String filePattern) throws SVNPublisherException {
+
+    public static List<File> findFilesWithPattern(String path, String filePattern, String[] variables, EnvVars envVars) throws SVNPublisherException {
         try {
             File baseDir = new File(path);
             FilePath filePath = new FilePath(baseDir);
             if (!filePath.exists()) {
-                throw new SVNPublisherException("Path does not exists "+path);
+                throw new SVNPublisherException("Path does not exists : " + path);
             }
-            ListFiles listFiles = new ListFiles(filePattern, "");
-            Map<String, String> files = filePath.act(listFiles);
-            return files.values().stream().map(File::new).collect(Collectors.toList());
+            boolean canUpload = true;
+            for (String variable : variables) {
+                if ("".equals(variable)) {
+                    break;
+                }
+                if (!variable.contains("=") || variable.split("=").length != 2) {
+                    canUpload = false;
+                    break;
+                } else {
+                    String key = variable.split("=")[0];
+                    String value = variable.split("=")[1];
+                    if (value == null || !value.equals(envVars.get(key))) {
+                        canUpload = false;
+                        break;
+                    }
+                }
+
+            }
+            if (canUpload) {
+                ListFiles listFiles = new ListFiles(filePattern, "");
+                Map<String, String> files = filePath.act(listFiles);
+                return files.values().stream().map(File::new).collect(Collectors.toList());
+            }
+            return new ArrayList<>();
         } catch (PatternSyntaxException e) {
             throw new SVNPublisherException("Invalid pattern file for " + filePattern);
         } catch (InterruptedException | IOException e) {
@@ -257,12 +271,12 @@ public class SVNWorker {
     }
 
     public void commit() throws SVNPublisherException {
-        try{
+        try {
             SVNCommitClient commit = manager.getCommitClient();
             SVNCommitPacket a = commit.doCollectCommitItems(new File[]{new File(workingCopy)}, false, true, SVNDepth.INFINITY, null);
-            SVNCommitInfo info = commit.doCommit(a, true, commitMessage);
-        }catch (SVNException e){
-            throw new SVNPublisherException("Cannot commit into repository "+e.getMessage());
+            SVNCommitInfo info = commit.doCommit(a, false, commitMessage);
+        } catch (SVNException e) {
+            throw new SVNPublisherException("Cannot commit into repository " + e.getMessage());
         }
     }
 

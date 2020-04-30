@@ -113,7 +113,7 @@ public class SVNPublisher extends Recorder implements SimpleBuildStep {
             SVNWorker repo = new SVNWorker(SVNWorker.replaceVars(envVars, this.svnUrl),  workspace,  SVNWorker.replaceVars(envVars,this.target), DescriptorImpl.lookupCredentials(this.svnUrl, run.getParent(), this.credentialsId));
             try {
                 List<ImportItem> artifact = SVNWorker.parseAndReplaceEnvVars(envVars, cloneItems(this.artifacts));
-                if (repo.createWorkingCopy(artifact).isEmpty()){
+                if (repo.createWorkingCopy(artifact, envVars).isEmpty()){
                     repo.dispose();
                 }
                 repo.setCommitMessage(SVNWorker.replaceVars(envVars,commitMessage));

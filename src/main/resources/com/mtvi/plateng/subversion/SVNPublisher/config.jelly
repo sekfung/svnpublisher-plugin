@@ -36,7 +36,12 @@
                         <f:entry title="Final name" field="name">
                             <f:textbox />
                         </f:entry>
-                    </td>                      
+                    </td>
+                    <td>
+                        <f:entry title="Variable trigger" field="variables">
+                            <f:textbox />
+                        </f:entry>
+                    </td>
                 </tr>
             </table>
             
