@@ -11,7 +11,7 @@
 
     <groupId>com.mtvi.plateng.subversion</groupId>
     <artifactId>svnpublisher</artifactId>
-    <version>1.3</version>
+    <version>1.4</version>
     <packaging>hpi</packaging>
     <name>SVN Publisher plugin</name>
     <description>
@@ -20,9 +20,9 @@
     <url>https://wiki.jenkins-ci.org/display/JENKINS/SVN+Publisher</url>
     <developers>
         <developer>
-            <id>travassos</id>
-            <name>Rui Travassos</name>
-            <email>rui.travassos@gmail.com</email>
+            <id>sekfung</id>
+            <name>Sekfung Lau</name>
+            <email>sekfung.lau@gmail.com</email>
         </developer>
     </developers>
 	
@@ -32,13 +32,7 @@
             <url>http://opensource.org/licenses/MIT</url>
         </license>
     </licenses>
-	
-    <!--scm>
-        <connection>scm:git:ssh://git@bitbucket.org/ruitravassos/svn-deployer.git</connection>
-        <developerConnection>scm:git:ssh://git@bitbucket.org/ruitravassos/svn-deployer.git</developerConnection>
-        <url>https://bitbucket.org/ruitravassos/svn-deployer.git</url>
-    </scm-->  
-	
+
     <dependencies>
         <dependency>
             <groupId>org.jenkins-ci.plugins</groupId>

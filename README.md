@@ -11,6 +11,6 @@ This version is not compatible with the older version 0.1
 
 The plugin is working with the new SVNKIT api. If you find any bug please contact me
 
-rui.travassos@gmail.com
+sekfung.lau@gmail.com
 
 Regards
