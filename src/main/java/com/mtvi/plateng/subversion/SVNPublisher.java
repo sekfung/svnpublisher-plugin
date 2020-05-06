@@ -17,6 +17,7 @@ import hudson.security.ACL;
 import hudson.tasks.*;
 import hudson.util.FormValidation;
 import hudson.util.ListBoxModel;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -39,7 +40,6 @@ import javax.annotation.Nonnull;
  * from) the twitter plugin by justinedelson and cactusman.
  *
  * @author bsmith
- *
  */
 public class SVNPublisher extends Recorder implements SimpleBuildStep {
 
@@ -48,15 +48,14 @@ public class SVNPublisher extends Recorder implements SimpleBuildStep {
     private static final Logger LOGGER = Logger.getLogger(SVNPublisher.class.getName());
 
     private String svnUrl;
-    private String target;
     private String credentialsId;
     private String commitMessage;
-    private List<ImportItem> artifacts = Lists.newArrayList();;
+    private List<ImportItem> artifacts = Lists.newArrayList();
+    ;
 
     @DataBoundConstructor
-    public SVNPublisher(String svnUrl, String target, String credentialsId, String commitMessage, List<ImportItem> artifacts) {
+    public SVNPublisher(String svnUrl, String credentialsId, String commitMessage, List<ImportItem> artifacts) {
         this.svnUrl = svnUrl;
-        this.target = target;
         this.credentialsId = credentialsId;
         this.artifacts = artifacts;
         this.commitMessage = commitMessage;
@@ -66,9 +65,6 @@ public class SVNPublisher extends Recorder implements SimpleBuildStep {
         return svnUrl;
     }
 
-    public String getTarget() {
-        return target;
-    }
 
     public List<ImportItem> getArtifacts() {
         return artifacts;
@@ -107,17 +103,17 @@ public class SVNPublisher extends Recorder implements SimpleBuildStep {
         String workspace;
         try {
             EnvVars envVars = run.getEnvironment(taskListener);
-            if ("".equalsIgnoreCase(this.target.trim()))
-                target = envVars.get("WORKSPACE");
+            String target = envVars.get("WORKSPACE");
             workspace = envVars.get("WORKSPACE") + SVNWorker.systemSeparator + "svnpublisher";
-            SVNWorker repo = new SVNWorker(SVNWorker.replaceVars(envVars, this.svnUrl),  workspace,  SVNWorker.replaceVars(envVars,this.target), DescriptorImpl.lookupCredentials(this.svnUrl, run.getParent(), this.credentialsId));
+            SVNWorker repo = new SVNWorker(SVNWorker.replaceVars(envVars, this.svnUrl), workspace, SVNWorker.replaceVars(envVars, target), DescriptorImpl.lookupCredentials(this.svnUrl, run.getParent(), this.credentialsId));
             try {
                 List<ImportItem> artifact = SVNWorker.parseAndReplaceEnvVars(envVars, cloneItems(this.artifacts));
-                if (repo.createWorkingCopy(artifact, envVars).isEmpty()){
+                if (repo.createWorkingCopy(artifact, envVars).isEmpty()) {
                     repo.dispose();
+                } else {
+                    repo.setCommitMessage(SVNWorker.replaceVars(envVars, commitMessage));
+                    repo.commit();
                 }
-                repo.setCommitMessage(SVNWorker.replaceVars(envVars,commitMessage));
-                repo.commit();
             } catch (SVNPublisherException ex) {
                 buildLogger.println(ex.getMessage());
                 throw new AbortException(ex.getMessage());
@@ -165,25 +161,25 @@ public class SVNPublisher extends Recorder implements SimpleBuildStep {
                 return FormValidation.error(ex.getErrorMessage().getMessage());
             }
         }
-        
+
         public <P extends AbstractProject> FormValidation doCheckSvnURL(@AncestorInPath Item context, @QueryParameter("svnUrl") final String url, @QueryParameter("credentialsId") final String credentialsId) {
             if ("".equalsIgnoreCase(url.trim())) {
                 return FormValidation.error("svn url is not valid");
             }
-            return doCheckCredentialsId(context,url,credentialsId);
+            return doCheckCredentialsId(context, url, credentialsId);
         }
-        
-        public <P extends AbstractProject> FormValidation doCheckTarget(@AncestorInPath AbstractProject project, @QueryParameter("target") final String target){
-             if ("".equalsIgnoreCase(target.trim()))
-                 return FormValidation.error("Path is not valid");             
-            try {
-                File f  = new File(SVNWorker.replaceVars(project.getSomeBuildWithWorkspace().getEnvironment(TaskListener.NULL), target));
-                if (!f.exists()) return FormValidation.error("Path does not exists");
-            } catch (IOException | InterruptedException ex) {
-                return FormValidation.error(ex.getMessage());
-            }
-            return FormValidation.ok();
-         }    
+
+//        public <P extends AbstractProject> FormValidation doCheckTarget(@AncestorInPath AbstractProject project, @QueryParameter("target") final String target){
+//             if ("".equalsIgnoreCase(target.trim()))
+//                 return FormValidation.error("Path is not valid");
+//            try {
+//                File f  = new File(SVNWorker.replaceVars(project.getSomeBuildWithWorkspace().getEnvironment(TaskListener.NULL), target));
+//                if (!f.exists()) return FormValidation.error("Path does not exists");
+//            } catch (IOException | InterruptedException ex) {
+//                return FormValidation.error(ex.getMessage());
+//            }
+//            return FormValidation.ok();
+//         }
 
         public ListBoxModel doFillCredentialsIdItems(@AncestorInPath Item context, @QueryParameter String svnUrl) {
             List<DomainRequirement> domainRequirements;
@@ -206,7 +202,7 @@ public class SVNPublisher extends Recorder implements SimpleBuildStep {
         private static Credentials lookupCredentials(String repoUrl, Item context, String credentialsId) {
             return credentialsId == null ? null : CredentialsMatchers
                     .firstOrNull(CredentialsProvider.lookupCredentials(StandardCredentials.class, context,
-                                    ACL.SYSTEM, URIRequirementBuilder.fromUri(repoUrl).build()),
+                            ACL.SYSTEM, URIRequirementBuilder.fromUri(repoUrl).build()),
                             CredentialsMatchers.allOf(CredentialsMatchers.withId(credentialsId),
                                     CredentialsMatchers.anyOf(CredentialsMatchers.instanceOf(StandardCredentials.class),
                                             CredentialsMatchers.instanceOf(SSHUserPrivateKey.class))));
@@ -225,11 +221,5 @@ public class SVNPublisher extends Recorder implements SimpleBuildStep {
         this.svnUrl = svnUrl;
     }
 
-    public void setTarget(String target) {
-        this.target = target;
-    }
 
- 
-    
-    
 }

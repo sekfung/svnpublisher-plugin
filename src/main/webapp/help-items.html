@@ -1,7 +1,7 @@
 <div>
  Artifacts to be deployer. <br>
- <b>Local Path</b> is the relative path to the artifacts location <br/>
- <b>File pattern</b> consists in a Java regex pattern which allow to you to describe multiple artifacts.<br/>
+ <b>File Path</b> is the relative path to the artifacts location <br/>
+ <b>File pattern</b> You can use wildcards like 'module/dist/**/*.zip'. See the includes attribute of Ant fileset for the exact format -- except that "," (comma) is the only supported separator. The base directory is the workspace. You can only archive files that are located in your workspace.<br/>
  <b>SVN Path</b> is the location where the files will be commited. If the <b>File pattern</b> matches multiple files, they will be all commited in this path <br/>
- <b>Final name</b> is used if you want to rename one file. Note: this field is ignored when <b>File pattern</b> matches multiple files.
+ <b>Parameter trigger</b>The commit will only be executed when the execution of the remote build parameters meets the conditions, by default <br/>
 </div>

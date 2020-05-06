@@ -3,9 +3,6 @@
     <f:entry title="SVN URL:" field="svnUrl" help="/plugin/svnpublisher/help-svnUrl.html">
         <f:textbox  />
     </f:entry>
-    <f:entry title="Base path:" field="target" help="/plugin/svnpublisher/help-target.html" >
-        <f:textbox  />
-    </f:entry>  
     <f:entry title="${%Credentials}" field="credentialsId">
         <f:select/>
     </f:entry>
@@ -33,12 +30,7 @@
                         </f:entry>
                     </td>   
                     <td>
-                        <f:entry title="Final name" field="name">
-                            <f:textbox />
-                        </f:entry>
-                    </td>
-                    <td>
-                        <f:entry title="Variable trigger" field="variables">
+                        <f:entry title="Parameter trigger" field="params">
                             <f:textbox />
                         </f:entry>
                     </td>

@@ -32,13 +32,9 @@ public class ImportItem extends AbstractDescribableImpl<ImportItem>{
      */
     private String localPath;
     /**
-     * The name to be used when placing an item in the repository.
+     * The params used to trigger uploading. "," (comma) is the only supported separator.
      */
-    private String name;
-    /**
-     * The variable used to trigger uploading. "," (comma) is the only supported separator.
-     */
-    private String variables;
+    private String params;
     
 
 
@@ -68,12 +64,11 @@ public class ImportItem extends AbstractDescribableImpl<ImportItem>{
      * repository.
      */
     @DataBoundConstructor
-    public ImportItem(String pattern, String path, String localPath, String name, String variables) {
+    public ImportItem(String pattern, String path, String localPath, String name, String params) {
         this.pattern = pattern;
         this.path = path;
-        this.name = name;
         this.localPath = localPath;
-        this.variables = variables;
+        this.params = params;
     }
 
 
@@ -86,9 +81,8 @@ public class ImportItem extends AbstractDescribableImpl<ImportItem>{
     ImportItem(ImportItem a) {
         this.pattern = a.getPattern();
         this.path = a.getPath();
-        this.name = a.getName();
         this.localPath = a.getLocalPath();
-        this.variables = a.getVariables();
+        this.params = a.getParams();
     }
 
       /**
@@ -109,15 +103,6 @@ public class ImportItem extends AbstractDescribableImpl<ImportItem>{
      */
     public String getPath() {
         return path;
-    }
-
-    /**
-     * Return the name to be used when placing an item in the repository.
-     *
-     * @return the name to be used when placing an item in the repository.
-     */
-    public String getName() {
-        return name;
     }
 
     /**
@@ -142,15 +127,6 @@ public class ImportItem extends AbstractDescribableImpl<ImportItem>{
     }
 
     /**
-     * Set the name to be used when placing an item in the repository.
-     *
-     * @param name the name to be used when placing an item in the repository.
-     */
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    /**
      * Set the local path relative project  where the items should be searched
      *
      * @return 
@@ -170,19 +146,19 @@ public class ImportItem extends AbstractDescribableImpl<ImportItem>{
     }
 
     /**
-     * Set the variable used to trigger uploading
-     * @param variables
+     * Set the params used to trigger uploading
+     * @param params
      */
-    public void setVariables(String variables) {
-        this.variables = variables;
+    public void setParams(String params) {
+        this.params = params;
     }
 
     /**
-     * Get the variable used to trigger uploading
-     * @return the trigger variables, "," (comma) is the only supported separator.
+     * Get the params used to trigger uploading
+     * @return the trigger params, "," (comma) is the only supported separator.
      */
-    public String getVariables() {
-        return variables;
+    public String getParams() {
+        return params;
     }
 
     @Extension
