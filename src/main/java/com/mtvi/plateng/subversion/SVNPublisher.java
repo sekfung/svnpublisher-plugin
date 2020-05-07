@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.logging.Logger;
 
 import jenkins.tasks.SimpleBuildStep;
+import org.jenkinsci.Symbol;
 import org.kohsuke.stapler.AncestorInPath;
 
 import org.kohsuke.stapler.DataBoundConstructor;
@@ -43,7 +44,6 @@ import javax.annotation.Nonnull;
  */
 public class SVNPublisher extends Recorder implements SimpleBuildStep {
 
-    @Extension
     public static final DescriptorImpl DESCRIPTOR = new DescriptorImpl();
     private static final Logger LOGGER = Logger.getLogger(SVNPublisher.class.getName());
 
@@ -126,11 +126,12 @@ public class SVNPublisher extends Recorder implements SimpleBuildStep {
         }
     }
 
+    @Extension @Symbol("publishSVN")
     public static final class DescriptorImpl extends BuildStepDescriptor<Publisher> {
 
         private static final Logger LOGGER = Logger.getLogger(DescriptorImpl.class.getName());
 
-        protected DescriptorImpl() {
+        public DescriptorImpl() {
             super(SVNPublisher.class);
             load();
         }
