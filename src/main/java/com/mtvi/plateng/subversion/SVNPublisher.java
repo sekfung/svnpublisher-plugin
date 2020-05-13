@@ -50,21 +50,22 @@ public class SVNPublisher extends Recorder implements SimpleBuildStep {
     private String svnUrl;
     private String credentialsId;
     private String commitMessage;
+    private String strategy;
     private List<ImportItem> artifacts = Lists.newArrayList();
     ;
 
     @DataBoundConstructor
-    public SVNPublisher(String svnUrl, String credentialsId, String commitMessage, List<ImportItem> artifacts) {
+    public SVNPublisher(String svnUrl, String credentialsId, String commitMessage, String strategy, List<ImportItem> artifacts) {
         this.svnUrl = svnUrl;
         this.credentialsId = credentialsId;
         this.artifacts = artifacts;
         this.commitMessage = commitMessage;
+        this.strategy = strategy;
     }
 
     public String getSvnUrl() {
         return svnUrl;
     }
-
 
     public List<ImportItem> getArtifacts() {
         return artifacts;
@@ -80,6 +81,18 @@ public class SVNPublisher extends Recorder implements SimpleBuildStep {
 
     public void setCommitMessage(String commitMessage) {
         this.commitMessage = commitMessage;
+    }
+
+    public void setStrategy(String strategy) {
+        this.strategy = strategy;
+    }
+
+    public void setArtifacts(List<ImportItem> artifacts) {
+        this.artifacts = artifacts;
+    }
+
+    public String getStrategy() {
+        return strategy;
     }
 
     private List<ImportItem> cloneItems(List<ImportItem> oldArtifacts) {
@@ -182,6 +195,13 @@ public class SVNPublisher extends Recorder implements SimpleBuildStep {
 //            return FormValidation.ok();
 //         }
 
+        public ListBoxModel doFillStrategyItems() {
+            ListBoxModel items = new ListBoxModel();
+            items.add("Always", "always");
+            items.add("Never", "never");
+            items.add("Trigger", "trigger");
+            return items;
+        }
         public ListBoxModel doFillCredentialsIdItems(@AncestorInPath Item context, @QueryParameter String svnUrl) {
             List<DomainRequirement> domainRequirements;
             domainRequirements = URIRequirementBuilder.fromUri(svnUrl.trim()).build();

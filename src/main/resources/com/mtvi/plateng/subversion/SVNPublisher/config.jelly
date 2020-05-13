@@ -9,7 +9,13 @@
     <f:entry title="Commit message:" field="commitMessage" help="/plugin/svnpublisher/help-message.html">
         <f:textbox  />
     </f:entry>
-   
+   <f:entry name="strategy" title="Publish Strategy" field="strategy">
+       <select name="strategy">
+           <option value="always">Always</option>
+           <option value="never">Never</option>
+            <option value="trigger">Trigger</option>
+       </select>
+   </f:entry>
     <f:entry help="/plugin/svnpublisher/help-items.html">
         <f:repeatable  field="artifacts" minimum="1">            
             <table>

@@ -157,7 +157,6 @@ public class SVNWorker {
         if (Pattern.matches("\\$\\{.+}", original)) {
             for (Map.Entry<String, String> k : vars.entrySet()) {
                 Pattern p = Pattern.compile("\\$\\{" + k.getKey() + "}");
-
                 Matcher m = p.matcher(replaced);
                 if (m.find()) {
                     replaced = m.replaceAll(vars.get(k.getKey()).trim());
@@ -278,6 +277,4 @@ public class SVNWorker {
         cleanWorkspace(workingCopy);
         manager.dispose();
     }
-
-
 }
