@@ -154,7 +154,7 @@ public class SVNWorker {
 
     public static String replaceVars(EnvVars vars, String original) {
         String replaced = original;
-        if (Pattern.matches("\\$\\{.*}}", original)) {
+        if (Pattern.matches("\\$\\{.+}", original)) {
             for (Map.Entry<String, String> k : vars.entrySet()) {
                 Pattern p = Pattern.compile("\\$\\{" + k.getKey() + "}");
 
