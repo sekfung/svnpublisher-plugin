@@ -22,6 +22,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
 
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Logger;
@@ -42,7 +43,7 @@ import javax.annotation.Nonnull;
  *
  * @author bsmith
  */
-public class SVNPublisher extends Recorder implements SimpleBuildStep {
+public class SVNPublisher extends Notifier implements SimpleBuildStep {
 
     public static final DescriptorImpl DESCRIPTOR = new DescriptorImpl();
     private static final Logger LOGGER = Logger.getLogger(SVNPublisher.class.getName());
@@ -52,7 +53,6 @@ public class SVNPublisher extends Recorder implements SimpleBuildStep {
     private String commitMessage;
     private String strategy;
     private List<ImportItem> artifacts = Lists.newArrayList();
-    ;
 
     @DataBoundConstructor
     public SVNPublisher(String svnUrl, String credentialsId, String commitMessage, String strategy, List<ImportItem> artifacts) {
@@ -105,26 +105,35 @@ public class SVNPublisher extends Recorder implements SimpleBuildStep {
         return newArts;
     }
 
+    @Override
     public BuildStepMonitor getRequiredMonitorService() {
         return BuildStepMonitor.BUILD;
     }
 
     @Override
-    public void perform(@Nonnull Run<?, ?> run, @Nonnull FilePath filePath, @Nonnull Launcher launcher, @Nonnull TaskListener taskListener) throws InterruptedException, IOException {
+    public void perform(@Nonnull Run<?, ?> run, @Nonnull FilePath filePath, @Nonnull Launcher launcher, @Nonnull TaskListener taskListener) throws AbortException {
         PrintStream buildLogger = taskListener.getLogger();
-
-        String workspace;
         try {
             EnvVars envVars = run.getEnvironment(taskListener);
             String target = envVars.get("WORKSPACE");
-            workspace = envVars.get("WORKSPACE") + SVNWorker.systemSeparator + "svnpublisher";
-            SVNWorker repo = new SVNWorker(SVNWorker.replaceVars(envVars, this.svnUrl), workspace, SVNWorker.replaceVars(envVars, target), DescriptorImpl.lookupCredentials(this.svnUrl, run.getParent(), this.credentialsId));
+            String workspace = Paths.get(envVars.get("WORKSPACE"), Constants.PLUGIN_NAME).toString();
+            SVNWorker repo = new SVNWorker.Builder()
+                    .svnUrl(Utils.replaceVars(envVars, this.svnUrl))
+                    .workingCopy(workspace)
+                    .baseLocalDir(Utils.replaceVars(envVars, target))
+                    .strategy(strategy)
+                    .credentials(DescriptorImpl.lookupCredentials(this.svnUrl, run.getParent(), this.credentialsId))
+                    .build();
+            if (Constants.NEVER_COMMIT.equalsIgnoreCase(strategy)) {
+                repo.dispose();
+                return;
+            }
             try {
-                List<ImportItem> artifact = SVNWorker.parseAndReplaceEnvVars(envVars, cloneItems(this.artifacts));
+                List<ImportItem> artifact = Utils.parseAndReplaceEnvVars(envVars, cloneItems(this.artifacts));
                 if (repo.createWorkingCopy(artifact, envVars).isEmpty()) {
                     repo.dispose();
                 } else {
-                    repo.setCommitMessage(SVNWorker.replaceVars(envVars, commitMessage));
+                    repo.setCommitMessage(Utils.replaceVars(envVars, commitMessage));
                     repo.commit();
                 }
             } catch (SVNPublisherException ex) {
@@ -165,7 +174,11 @@ public class SVNPublisher extends Recorder implements SimpleBuildStep {
             }
             try {
                 Credentials cred = DescriptorImpl.lookupCredentials(url, context, credentialsId);
-                SVNWorker svn = new SVNWorker(url, cred);
+                SVNWorker svn = new SVNWorker
+                        .Builder()
+                        .svnUrl(url)
+                        .credentials(cred)
+                        .build();
                 if (svn.getSVNRepository() == null) {
                     return FormValidation.error("Can not connect to repository");
                 }
@@ -183,23 +196,11 @@ public class SVNPublisher extends Recorder implements SimpleBuildStep {
             return doCheckCredentialsId(context, url, credentialsId);
         }
 
-//        public <P extends AbstractProject> FormValidation doCheckTarget(@AncestorInPath AbstractProject project, @QueryParameter("target") final String target){
-//             if ("".equalsIgnoreCase(target.trim()))
-//                 return FormValidation.error("Path is not valid");
-//            try {
-//                File f  = new File(SVNWorker.replaceVars(project.getSomeBuildWithWorkspace().getEnvironment(TaskListener.NULL), target));
-//                if (!f.exists()) return FormValidation.error("Path does not exists");
-//            } catch (IOException | InterruptedException ex) {
-//                return FormValidation.error(ex.getMessage());
-//            }
-//            return FormValidation.ok();
-//         }
-
         public ListBoxModel doFillStrategyItems() {
             ListBoxModel items = new ListBoxModel();
-            items.add("Always", "always");
-            items.add("Never", "never");
-            items.add("Trigger", "trigger");
+            items.add("Always", Constants.ALWAYS_COMMIT);
+            items.add("Never", Constants.NEVER_COMMIT);
+            items.add("Trigger", Constants.TRIGGER_COMMIT);
             return items;
         }
         public ListBoxModel doFillCredentialsIdItems(@AncestorInPath Item context, @QueryParameter String svnUrl) {

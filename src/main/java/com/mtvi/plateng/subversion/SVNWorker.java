@@ -21,6 +21,8 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -46,25 +48,26 @@ import java.util.stream.Collectors;
 public class SVNWorker {
 
     private static final Logger LOGGER = Logger.getLogger(SVNWorker.class.getName());
-    public final static String systemSeparator = System.getProperty("file.separator");
 
     private SVNClientManager manager;
     private SVNRepository repository;
     private String workingCopy;
     private String commitMessage = "";
     private String baseLocalDir;
+    private String strategy;
 
-    public SVNWorker(String url, String workingCopy, String baseLocalDir, Credentials credentials) {
+    private SVNWorker(String url, String workingCopy, String baseLocalDir, Credentials credentials, String strategy) {
         try {
             initRepo(SVNURL.parseURIDecoded(url), credentials);
             this.workingCopy = workingCopy;
             this.baseLocalDir = baseLocalDir;
+            this.strategy = strategy;
         } catch (SVNException ex) {
             LOGGER.log(Level.SEVERE, ex.getMessage());
         }
     }
 
-    public SVNWorker(String url, Credentials credentials) {
+    private SVNWorker(String url, Credentials credentials) {
         try {
             initRepo(SVNURL.parseURIDecoded(url), credentials);
         } catch (SVNException ex) {
@@ -97,6 +100,13 @@ public class SVNWorker {
         }
     }
 
+//    private static void createWorkspace(String workspace) {
+//        File file = new File(workspace);
+//        if (!file.exists()) {
+//            boolean result = file.mkdir();
+//        }
+//    }
+
     public String getCommitMessage() {
         return commitMessage;
     }
@@ -119,52 +129,6 @@ public class SVNWorker {
             repoPath = "/" + repoPath;
         }
         return repoPath;
-    }
-
-    /**
-     * Replace the env vars and parameters of jenkins in
-     *
-     * @param <T>
-     * @param vars
-     * @param originalArtifacts
-     * @return
-     */
-    public static <T> List<T> parseAndReplaceEnvVars(EnvVars vars, List<T> originalArtifacts) {
-
-        for (T a : originalArtifacts) {
-            Field[] fields;
-            fields = a.getClass().getDeclaredFields();
-            for (Field f : fields) {
-                if (f.getType().isInstance("")) {
-                    String capitalName = StringUtils.capitalize(f.getName());
-                    try {
-                        Method invokeSet = a.getClass().getDeclaredMethod("set" + capitalName, String.class);
-                        Method invokeGet = a.getClass().getDeclaredMethod("get" + capitalName);
-
-                        invokeSet.invoke(a, replaceVars(vars, (String) invokeGet.invoke(a)));
-
-                    } catch (NoSuchMethodException | SecurityException | IllegalAccessException | IllegalArgumentException | InvocationTargetException | NullPointerException ex) {
-                        LOGGER.log(Level.FINEST, "{0} {1}", new Object[]{f.getName(), ex.getMessage()});
-                    }
-                }
-            }
-        }
-        return originalArtifacts;
-    }
-
-    public static String replaceVars(EnvVars vars, String original) {
-        String replaced = original;
-        if (Pattern.matches("\\$\\{.+}", original)) {
-            for (Map.Entry<String, String> k : vars.entrySet()) {
-                Pattern p = Pattern.compile("\\$\\{" + k.getKey() + "}");
-                Matcher m = p.matcher(replaced);
-                if (m.find()) {
-                    replaced = m.replaceAll(vars.get(k.getKey()).trim());
-                }
-            }
-        }
-
-        return replaced;
     }
 
     private SVNPropertyData checkoutDir(SVNURL svnPath, File workingcopy, SVNDepth depth) throws SVNException {
@@ -190,20 +154,24 @@ public class SVNWorker {
             for (ImportItem i : item) {
                 SVNURL svnDestination = svnPath.appendPath(i.getPath(), true);
                 SVNNodeKind pathType = repository.checkPath(getRelativePath(svnDestination, repository), repository.getLatestRevision());
-                File dir = new File(workingCopy + SVNWorker.systemSeparator + i.getPath());
+                File dir = new File(workingCopy, i.getPath());
                 if (pathType == SVNNodeKind.NONE) {
                     addDir(dir);
                 } else if (pathType == SVNNodeKind.DIR) {
                     checkoutDir(svnDestination, dir, SVNDepth.INFINITY);
                 }
-                String localPath = this.baseLocalDir + SVNWorker.systemSeparator + i.getLocalPath();
+                String localPath = Paths.get(this.baseLocalDir, i.getLocalPath()).toString();
                 String[] params = i.getParams().split(",");
-                List<File> filesToCopy = findFilesWithPattern(localPath, i.getPattern(), params, envVars);
+                //  empty params equals always commit
+                if (Constants.ALWAYS_COMMIT.equalsIgnoreCase(this.strategy)) {
+                    params = new String[]{""};
+                }
+                List<File> filesToCopy = Utils.findFilesWithPattern(localPath, i.getPattern(), params, envVars);
                 for (File f : filesToCopy) {
                     try {
-                        wc = new File(dir.getAbsolutePath() + SVNWorker.systemSeparator + f.getName());
+                        wc = new File(dir, f.getName());
                         boolean toAdd = !wc.exists();
-                        FileUtils.copyFile(new File(localPath+SVNWorker.systemSeparator+f.getName()), wc);
+                        FileUtils.copyFile(new File(localPath, f.getName()), wc);
                         if (toAdd) {
                             manager.getWCClient().doAdd(wc, false, false, false, SVNDepth.INFINITY, false, false, false);
                         }
@@ -223,46 +191,6 @@ public class SVNWorker {
         return files;
     }
 
-
-    public static List<File> findFilesWithPattern(String path, String filePattern, String[] params, EnvVars envVars) throws SVNPublisherException {
-        try {
-            File baseDir = new File(path);
-            FilePath filePath = new FilePath(baseDir);
-            if (!filePath.exists()) {
-                throw new SVNPublisherException("Path does not exists : " + path);
-            }
-            boolean canUpload = true;
-            for (String variable : params) {
-                if ("".equals(variable)) {
-                    break;
-                }
-                if (!variable.contains("=") || variable.split("=").length != 2) {
-                    canUpload = false;
-                    break;
-                } else {
-                    String key = variable.split("=")[0];
-                    String value = variable.split("=")[1];
-                    if (value == null || !value.equals(envVars.get(key))) {
-                        canUpload = false;
-                        break;
-                    }
-                }
-
-            }
-            if (canUpload) {
-                ListFiles listFiles = new ListFiles(filePattern, "");
-                Map<String, String> files = filePath.act(listFiles);
-                return files.values().stream().map(File::new).collect(Collectors.toList());
-            }
-            return new ArrayList<>();
-        } catch (PatternSyntaxException e) {
-            throw new SVNPublisherException("Invalid pattern file for " + filePattern);
-        } catch (InterruptedException | IOException e) {
-            e.printStackTrace();
-            throw new SVNPublisherException("Invalid pattern file for " + e.getMessage());
-        }
-    }
-
     public void commit() throws SVNPublisherException {
         try {
             SVNCommitClient commit = manager.getCommitClient();
@@ -277,4 +205,48 @@ public class SVNWorker {
         cleanWorkspace(workingCopy);
         manager.dispose();
     }
+
+    public static class Builder {
+        private String url;
+        private String workingCopy;
+        private String baseLocalDir;
+        private Credentials credentials;
+        private String strategy = "always";
+
+        public Builder svnUrl(String svnUrl) {
+            this.url = svnUrl;
+            return this;
+        }
+
+        public Builder workingCopy(String workingCopy) {
+            this.workingCopy = workingCopy;
+            return this;
+        }
+
+        public Builder baseLocalDir(String baseLocalDir) {
+            this.baseLocalDir = baseLocalDir;
+            return this;
+        }
+
+        public Builder credentials(Credentials credentials) {
+            this.credentials = credentials;
+            return this;
+        }
+
+        public Builder strategy(String strategy) {
+            this.strategy = strategy;
+            return this;
+        }
+
+        public SVNWorker build() {
+            if ("".equalsIgnoreCase(url)) {
+                throw new IllegalArgumentException("svn url is empty");
+            }
+            if (credentials == null) {
+                throw new IllegalArgumentException("credentials not found");
+            }
+            return new SVNWorker(url, workingCopy, baseLocalDir, credentials, strategy);
+        }
+    }
+
 }
