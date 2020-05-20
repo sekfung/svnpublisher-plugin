@@ -116,7 +116,7 @@ public class SVNPublisher extends Notifier implements SimpleBuildStep {
         try {
             EnvVars envVars = run.getEnvironment(taskListener);
             String target = envVars.get("WORKSPACE");
-            String workspace = Paths.get(envVars.get("WORKSPACE"), Constants.PLUGIN_NAME).toString();
+            FilePath workspace = new FilePath(filePath, Constants.PLUGIN_NAME);
             SVNWorker repo = new SVNWorker.Builder()
                     .svnUrl(Utils.replaceVars(envVars, this.svnUrl))
                     .workingCopy(workspace)
@@ -134,7 +134,7 @@ public class SVNPublisher extends Notifier implements SimpleBuildStep {
                     repo.dispose();
                 } else {
                     repo.setCommitMessage(Utils.replaceVars(envVars, commitMessage));
-                    repo.commit();
+//                    repo.commit();
                 }
             } catch (SVNPublisherException ex) {
                 buildLogger.println(ex.getMessage());
