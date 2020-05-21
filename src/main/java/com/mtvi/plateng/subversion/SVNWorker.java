@@ -7,6 +7,9 @@ import hudson.FilePath;
 import hudson.remoting.VirtualChannel;
 import hudson.scm.CredentialsSVNAuthenticationProviderImpl;
 import jenkins.MasterToSlaveFileCallable;
+import jenkins.security.Roles;
+import org.apache.commons.io.FileUtils;
+import org.jenkinsci.remoting.RoleChecker;
 import org.tmatesoft.svn.core.SVNDepth;
 import org.tmatesoft.svn.core.SVNException;
 import org.tmatesoft.svn.core.SVNNodeKind;
@@ -17,7 +20,7 @@ import org.tmatesoft.svn.core.io.SVNRepository;
 import org.tmatesoft.svn.core.wc.*;
 
 import java.io.*;
-import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -34,7 +37,7 @@ import java.util.logging.Logger;
  * @author travassos
  * @version 1.0
  */
-public class SVNWorker implements Externalizable {
+public class SVNWorker implements Serializable {
     private static final long serialVersionUID = 1L;
     private static final Logger LOGGER = Logger.getLogger(SVNWorker.class.getName());
     private SVNClientManager manager;
@@ -48,10 +51,10 @@ public class SVNWorker implements Externalizable {
         throw new IllegalArgumentException("");
     }
 
-    private SVNWorker(String url, FilePath workingCopy, String baseLocalDir, Credentials credentials, String strategy) {
+    private SVNWorker(String url, FilePath workspace, String baseLocalDir, Credentials credentials, String strategy) {
         try {
             initRepo(SVNURL.parseURIDecoded(url), credentials);
-            this.workingCopy = workingCopy;
+            this.workingCopy = workspace;
             this.baseLocalDir = baseLocalDir;
             this.strategy = strategy;
         } catch (SVNException ex) {
@@ -90,12 +93,14 @@ public class SVNWorker implements Externalizable {
         }
     }
 
-//    private static void createWorkspace(String workspace) {
-//        File file = new File(workspace);
-//        if (!file.exists()) {
-//            boolean result = file.mkdir();
-//        }
-//    }
+    private static void createWorkspace(FilePath workspace) {
+        try {
+            workspace.act(new TargetFileCallable("create"));
+        } catch (IOException | InterruptedException e) {
+            LOGGER.info(e.getMessage());
+            e.printStackTrace();
+        }
+    }
 
     public String getCommitMessage() {
         return commitMessage;
@@ -158,74 +163,43 @@ public class SVNWorker implements Externalizable {
     public List<File> createWorkingCopy(List<ImportItem> item, EnvVars envVars) throws SVNPublisherException {
         List<File> files = Lists.newArrayList();
         try {
-            cleanWorkspace(new FilePath(workingCopy.getParent(), "test"));
+            cleanWorkspace(new FilePath(workingCopy, "tags"));
             SVNURL svnPath = repository.getLocation();
-            checkoutDir(svnPath, workingCopy);
+            createWorkspace(new FilePath(workingCopy, "test"));
+            if (workingCopy != null) {
+                workingCopy.act(new CheckoutTask(manager, svnPath));
+            }
+//            checkoutDir(svnPath, workingCopy);
 
             for (ImportItem i : item) {
                 SVNURL svnDestination = svnPath.appendPath(i.getPath(), true);
                 SVNNodeKind pathType = repository.checkPath(getRelativePath(svnDestination, repository), repository.getLatestRevision());
                 FilePath dir = new FilePath(workingCopy, i.getPath());
                 if (pathType == SVNNodeKind.NONE) {
-                    addDir(dir);
+                    dir.act(new AddTask(manager));
                 } else if (pathType == SVNNodeKind.DIR) {
-                    checkoutDir(svnDestination, dir);
+                    dir.act(new CheckoutTask(manager, svnDestination));
                 }
-                String localPath = Paths.get(this.baseLocalDir, i.getLocalPath()).toString();
-                String[] params = i.getParams().split(",");
-                //  empty params equals always commit
-                if (Constants.ALWAYS_COMMIT.equalsIgnoreCase(this.strategy)) {
-                    params = new String[]{""};
-                }
-                List<File> filesToCopy = Utils.findFilesWithPattern(localPath, i.getPattern(), params, envVars);
-//                for (File f : filesToCopy) {
-//                    try {
-//                        FilePath wc = new FilePath(dir, f.getName());
-//                        boolean toAdd = !wc.exists();
-//                        FileUtils.copyFile(new File(localPath, f.getName()), wc);
-//                        if (toAdd) {
-//                            manager.getWCClient().doAdd(wc, false, false, false, SVNDepth.INFINITY, false, false, false);
-//                        }
-//                        files.add(wc);
-//                    } catch (IOException ex) {
-//                        throw new SVNPublisherException("Cannot create working copy for file " + f.getAbsolutePath());
-//                    }
-//                }
+                FilePath localPath = new FilePath(new File(baseLocalDir, i.getLocalPath()));
+                files.addAll(localPath.act(new CopyFilesTask(manager, i, envVars, strategy, dir)));
             }
         } catch (SVNException e) {
             throw new SVNPublisherException("Error in repository " + e.getMessage());
-        } catch (SVNPublisherException ex) {
-            throw ex;
         } catch (Exception ex1) {
             throw new SVNPublisherException(ex1);
         }
         return files;
     }
 
-//    public void commit() throws SVNPublisherException {
-//        try {
-//            SVNCommitClient commit = manager.getCommitClient();
-//            SVNCommitPacket a = commit.doCollectCommitItems(new File[]{new File(workingCopy)}, false, true, SVNDepth.INFINITY, null);
-//            commit.doCommit(a, false, commitMessage);
-//        } catch (SVNException e) {
-//            throw new SVNPublisherException("Cannot commit into repository " + e.getMessage());
-//        }
-//    }
+    public void commit() throws IOException, InterruptedException {
+        workingCopy.act(new CommitTask(manager, commitMessage));
+    }
 
     public void dispose() {
         cleanWorkspace(workingCopy);
         manager.dispose();
     }
 
-    @Override
-    public void writeExternal(ObjectOutput out) throws IOException {
-
-    }
-
-    @Override
-    public void readExternal(ObjectInput in) throws IOException, ClassNotFoundException {
-
-    }
 
     public static class Builder {
         private String url;
@@ -267,6 +241,142 @@ public class SVNWorker implements Externalizable {
                 throw new IllegalArgumentException("credentials not found");
             }
             return new SVNWorker(url, workingCopy, baseLocalDir, credentials, strategy);
+        }
+    }
+
+    private static class CheckoutTask extends MasterToSlaveFileCallable<SVNPropertyData> {
+        private transient SVNURL svnPath;
+        private transient SVNClientManager manager;
+
+        CheckoutTask(SVNClientManager manager, SVNURL svnPath) {
+            this.manager = manager;
+            this.svnPath = svnPath;
+        }
+
+        @Override
+        public SVNPropertyData invoke(File file, VirtualChannel virtualChannel) throws IOException, InterruptedException {
+            File workingCopy = new File(file, Constants.PLUGIN_NAME);
+            if (!workingCopy.exists()) {
+                workingCopy.mkdirs();
+            }
+            try {
+                manager.getUpdateClient().doCheckout(svnPath, workingCopy, SVNRevision.HEAD, SVNRevision.HEAD, SVNDepth.INFINITY, true);
+                return manager.getWCClient().doGetProperty(svnPath, null, SVNRevision.HEAD, SVNRevision.HEAD);
+            } catch (SVNException e) {
+                LOGGER.info(e.getMessage());
+                e.printStackTrace();
+            }
+            return null;
+        }
+
+        @Override
+        public void checkRoles(RoleChecker roleChecker) throws SecurityException {
+            roleChecker.check(this, Roles.SLAVE);
+        }
+    }
+
+    private static class AddTask implements FilePath.FileCallable<Boolean>, Serializable {
+        private transient SVNClientManager manager;
+
+        AddTask(SVNClientManager manager) {
+            this.manager = manager;
+        }
+
+        @Override
+        public Boolean invoke(File file, VirtualChannel virtualChannel) throws IOException, InterruptedException {
+            if (!file.exists() && !file.mkdirs()) {
+                throw new IOException("mkdir file failed: " + file.getName());
+            }
+            try {
+                manager.getWCClient().doAdd(file, false, true, false, SVNDepth.INFINITY, false, false, true);
+            } catch (SVNException e) {
+                LOGGER.info(e.getMessage());
+                e.printStackTrace();
+                return false;
+            }
+            return true;
+        }
+
+        @Override
+        public void checkRoles(RoleChecker roleChecker) throws SecurityException {
+            roleChecker.check(this, Roles.SLAVE);
+        }
+    }
+
+    private static class CopyFilesTask implements FilePath.FileCallable<List<File>>, Serializable {
+        private transient SVNClientManager manager;
+        private ImportItem item;
+        private transient EnvVars envVars;
+        private String strategy;
+        private FilePath workingCopy;
+
+        CopyFilesTask(SVNClientManager manager, ImportItem item, EnvVars vars, String strategy, FilePath workingCopy) {
+            this.manager = manager;
+            this.item = item;
+            this.envVars = vars;
+            this.strategy = strategy;
+            this.workingCopy = workingCopy;
+        }
+
+        @Override
+        public List<File> invoke(File file, VirtualChannel virtualChannel) throws IOException, InterruptedException {
+            List<File> files = new ArrayList<>();
+            String[] params = item.getParams().split(",");
+            //  empty params equals always commit
+            if (Constants.ALWAYS_COMMIT.equalsIgnoreCase(this.strategy)) {
+                params = new String[]{""};
+            }
+            try {
+                List<File> filesToCopy = Utils.findFilesWithPattern(new FilePath(file), item.getPattern(), params, envVars);
+                for (File f : filesToCopy) {
+                    File wc = new File(workingCopy.getRemote(), f.getName());
+                    boolean toAdd = !wc.exists();
+                    FileUtils.copyFile(new File(file, f.getName()), wc);
+                    if (toAdd) {
+                        manager.getWCClient().doAdd(wc, false, false, false, SVNDepth.INFINITY, false, false, false);
+                    }
+                    files.add(wc);
+                }
+            } catch (SVNPublisherException | SVNException e) {
+                LOGGER.info(e.getMessage());
+                e.printStackTrace();
+            }
+            return files;
+        }
+
+        @Override
+        public void checkRoles(RoleChecker roleChecker) throws SecurityException {
+            roleChecker.check(this, Roles.SLAVE);
+        }
+    }
+
+
+    private static class CommitTask implements FilePath.FileCallable<Boolean>, Serializable {
+        private transient SVNClientManager manager;
+        private String commitMessage;
+
+        CommitTask(SVNClientManager manager, String commitMsg) {
+            this.manager = manager;
+            this.commitMessage = commitMsg;
+        }
+
+        @Override
+        public Boolean invoke(File file, VirtualChannel virtualChannel) throws IOException, InterruptedException {
+            try {
+                SVNCommitClient commit = manager.getCommitClient();
+                SVNCommitPacket a = commit.doCollectCommitItems(new File[]{file}, false, true, SVNDepth.INFINITY, null);
+                commit.doCommit(a, false, commitMessage);
+                return true;
+            } catch (SVNException e) {
+                LOGGER.info(e.getMessage());
+                e.printStackTrace();
+            }
+            return false;
+        }
+
+        @Override
+        public void checkRoles(RoleChecker roleChecker) throws SecurityException {
+            roleChecker.check(this, Roles.SLAVE);
         }
     }
 

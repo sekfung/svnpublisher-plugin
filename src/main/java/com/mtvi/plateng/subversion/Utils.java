@@ -70,12 +70,10 @@ public class Utils {
         return originalArtifacts;
     }
 
-    public static List<File> findFilesWithPattern(String path, String filePattern, String[] params, EnvVars envVars) throws SVNPublisherException {
+    public static List<File> findFilesWithPattern(FilePath filePath, String filePattern, String[] params, EnvVars envVars) throws SVNPublisherException {
         try {
-            File baseDir = new File(path);
-            FilePath filePath = new FilePath(baseDir);
             if (!filePath.exists()) {
-                throw new SVNPublisherException("Path does not exists : " + path);
+                throw new IOException("Path does not exists : " + filePath.getRemote());
             }
             boolean canUpload = true;
             for (String variable : params) {

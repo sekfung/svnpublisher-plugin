@@ -51,6 +51,20 @@
 
     <dependencies>
         <dependency>
+            <groupId>com.sekfung.common</groupId>
+            <artifactId>svnkit</artifactId>
+            <version>1.10.2</version>
+            <scope>system</scope> <!--system，类似provided，需要显式提供依赖的jar以后，Maven就不会在Repository中查找它-->
+            <systemPath>${basedir}/src/libs/svnkit-1.10.2-SNAPSHOT.jar</systemPath> <!--项目根目录下的lib文件夹下-->
+        </dependency>
+        <dependency>
+            <groupId>org.jenkins-ci.main</groupId>
+            <artifactId>jenkins-war</artifactId>
+            <version>2.222.3</version>
+            <type>war</type>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
             <groupId>org.jenkins-ci.plugins</groupId>
             <artifactId>subversion</artifactId>
             <version>2.13.1</version>
@@ -60,25 +74,6 @@
                     <artifactId>svnkit</artifactId>
                 </exclusion>
             </exclusions>
-        </dependency>
-        <dependency>
-            <groupId>org.tmatesoft.svnkit</groupId>
-            <artifactId>svnkit</artifactId>
-            <version>1.10.2</version>
-        </dependency>
-<!--        <dependency>-->
-<!--            <groupId>com.sekfung.common</groupId>-->
-<!--            <artifactId>svnkit</artifactId>-->
-<!--            <version>1.10.1</version>-->
-<!--            <scope>system</scope> &lt;!&ndash;system，类似provided，需要显式提供依赖的jar以后，Maven就不会在Repository中查找它&ndash;&gt;-->
-<!--            <systemPath>${basedir}/src/libs/svnkit-1.10.1.jar</systemPath> &lt;!&ndash;项目根目录下的lib文件夹下&ndash;&gt;-->
-<!--        </dependency>-->
-        <dependency>
-            <groupId>org.jenkins-ci.main</groupId>
-            <artifactId>jenkins-war</artifactId>
-            <version>2.222.3</version>
-            <type>war</type>
-            <scope>provided</scope>
         </dependency>
     </dependencies>
 
