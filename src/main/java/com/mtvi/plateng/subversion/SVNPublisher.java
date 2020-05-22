@@ -115,12 +115,9 @@ public class SVNPublisher extends Notifier implements SimpleBuildStep {
         PrintStream buildLogger = taskListener.getLogger();
         try {
             EnvVars envVars = run.getEnvironment(taskListener);
-            String target = envVars.get("WORKSPACE");
-            FilePath workspace = new FilePath(new File(target));
             SVNWorker repo = new SVNWorker.Builder()
                     .svnUrl(Utils.replaceVars(envVars, this.svnUrl))
-                    .workingCopy(workspace)
-                    .baseLocalDir(Utils.replaceVars(envVars, target))
+                    .workingCopy(filePath)
                     .strategy(strategy)
                     .credentials(DescriptorImpl.lookupCredentials(this.svnUrl, run.getParent(), this.credentialsId))
                     .build();
