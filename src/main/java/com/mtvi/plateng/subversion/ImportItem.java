@@ -5,6 +5,7 @@ import hudson.model.AbstractDescribableImpl;
 import hudson.model.Descriptor;
 import org.kohsuke.stapler.DataBoundConstructor;
 
+import java.io.Serializable;
 
 
 /**
@@ -16,7 +17,7 @@ import org.kohsuke.stapler.DataBoundConstructor;
  * @author bsmith
  *
  */
-public class ImportItem extends AbstractDescribableImpl<ImportItem>{
+public class ImportItem extends AbstractDescribableImpl<ImportItem> implements Serializable {
 
     /**
      * The pattern used to find files/folders covered by this item.

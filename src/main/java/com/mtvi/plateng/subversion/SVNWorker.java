@@ -40,25 +40,34 @@ import java.util.logging.Logger;
 public class SVNWorker implements Serializable {
     private static final long serialVersionUID = 1L;
     private static final Logger LOGGER = Logger.getLogger(SVNWorker.class.getName());
-    private SVNClientManager manager;
-    private SVNRepository repository;
+    private transient SVNClientManager manager;
+    private transient SVNRepository repository;
     private FilePath workingCopy;
     private FilePath workSpace;
     private String commitMessage = "";
     private FilePath baseLocalDir;
     private String strategy;
 
-    private SVNWorker(String url, FilePath workspace, Credentials credentials, String strategy) {
+    private SVNWorker(String url, String workspace, Credentials credentials, String strategy) {
         try {
+            FilePath workspacePath = new FilePath(new File(workspace));
             initRepo(SVNURL.parseURIDecoded(url), credentials);
-            this.workingCopy = new FilePath(workspace, Constants.PLUGIN_NAME);
-            this.workSpace = workspace;
-            this.baseLocalDir = workspace;
+            this.workingCopy = new FilePath(workspacePath, Constants.PLUGIN_NAME);
+            this.workSpace = workspacePath;
+            this.baseLocalDir = workspacePath;
             this.strategy = strategy;
         } catch (SVNException ex) {
             LOGGER.log(Level.SEVERE, ex.getMessage());
         }
     }
+    private SVNWorker(String url, Credentials credentials) {
+        try {
+            initRepo(SVNURL.parseURIDecoded(url), credentials);
+        } catch (SVNException ex) {
+            LOGGER.log(Level.SEVERE, ex.getMessage());
+        }
+    }
+
 
     private void initRepo(SVNURL repoUrl, Credentials credentials) throws SVNException {
         ISVNAuthenticationManager sam;
@@ -114,9 +123,7 @@ public class SVNWorker implements Serializable {
         try {
             cleanWorkspace(workingCopy);
             SVNURL svnPath = repository.getLocation();
-            if (workSpace != null) {
-                workSpace.act(new CheckoutTask(manager, svnPath));
-            }
+            workSpace.act(new CheckoutTask(manager, svnPath));
             for (ImportItem i : item) {
                 SVNURL svnDestination = svnPath.appendPath(i.getPath(), true);
                 SVNNodeKind pathType = repository.checkPath(getRelativePath(svnDestination, repository), repository.getLatestRevision());
@@ -149,7 +156,7 @@ public class SVNWorker implements Serializable {
 
     public static class Builder {
         private String url;
-        private FilePath workingCopy;
+        private String workingCopy;
         private Credentials credentials;
         private String strategy = "always";
 
@@ -158,7 +165,7 @@ public class SVNWorker implements Serializable {
             return this;
         }
 
-        public Builder workingCopy(FilePath workingCopy) {
+        public Builder workingCopy(String workingCopy) {
             this.workingCopy = workingCopy;
             return this;
         }
@@ -184,9 +191,9 @@ public class SVNWorker implements Serializable {
         }
     }
 
-    private static class CheckoutTask extends MasterToSlaveFileCallable<SVNPropertyData> {
+    private static class CheckoutTask extends MasterToSlaveFileCallable<SVNPropertyData> implements Serializable {
         private static final long serialVersionUID = 1L;
-        private transient SVNURL svnPath;
+        private SVNURL svnPath;
         private transient SVNClientManager manager;
 
         CheckoutTask(SVNClientManager manager, SVNURL svnPath) {
@@ -245,7 +252,7 @@ public class SVNWorker implements Serializable {
         private static final long serialVersionUID = 1L;
         private transient SVNClientManager manager;
         private ImportItem item;
-        private transient EnvVars envVars;
+        private EnvVars envVars;
         private String strategy;
         private FilePath workingCopy;
 
