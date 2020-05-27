@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<l:dependencies xmlns:l='licenses' groupId='org.tmatesoft.svnkit' artifactId='svnkit' version='1.10.3'><l:dependency name='svnkit' groupId='org.tmatesoft.svnkit' artifactId='svnkit' version='1.10.3' url='https://wiki.jenkins-ci.org/display/JENKINS/SVN+Publisher/svnkit'><l:description>Plugin for Jenkins that publishes to SVN.</l:description><l:license name='MIT License' url='http://opensource.org/licenses/MIT'/></l:dependency></l:dependencies>

@@ -1,9 +1,12 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
     <modelVersion>4.0.0</modelVersion>
+    <modules>
+        <module>svntool</module>
+    </modules>
     <properties>
         <java.level>8</java.level>
-        <svnkit.version>1.10.2</svnkit.version>
+        <svnkit.version>1.10.3</svnkit.version>
         <subversion.version>2.13.1</subversion.version>
     </properties>
     <parent>
@@ -11,11 +14,10 @@
         <artifactId>plugin</artifactId>
         <version>3.57</version>
     </parent>
-
     <groupId>com.mtvi.plateng.subversion</groupId>
     <artifactId>svnpublisher</artifactId>
     <version>1.4.2</version>
-    <packaging>hpi</packaging>
+    <packaging>pom</packaging>
     <name>SVN Publisher plugin</name>
     <description>
         Plugin for Jenkins that publishes to SVN.

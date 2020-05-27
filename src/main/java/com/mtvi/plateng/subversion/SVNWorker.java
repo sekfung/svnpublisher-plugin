@@ -204,6 +204,9 @@ public class SVNWorker implements Serializable {
         @Override
         public SVNPropertyData invoke(File file, VirtualChannel virtualChannel) throws IOException, InterruptedException {
             try {
+                if (!file.exists()) {
+                    throw new IOException("io exception");
+                }
                 manager.getUpdateClient().doCheckout(svnPath, new File(file, Constants.PLUGIN_NAME), SVNRevision.HEAD, SVNRevision.HEAD, SVNDepth.INFINITY, true);
                 return manager.getWCClient().doGetProperty(svnPath, null, SVNRevision.HEAD, SVNRevision.HEAD);
             } catch (SVNException e) {

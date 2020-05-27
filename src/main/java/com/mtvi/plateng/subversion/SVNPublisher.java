@@ -12,30 +12,27 @@ import com.cloudbees.plugins.credentials.domains.DomainRequirement;
 import com.cloudbees.plugins.credentials.domains.URIRequirementBuilder;
 import com.google.common.collect.Lists;
 import hudson.*;
-import hudson.model.*;
+import hudson.model.AbstractProject;
+import hudson.model.Item;
+import hudson.model.Run;
+import hudson.model.TaskListener;
 import hudson.security.ACL;
 import hudson.tasks.*;
 import hudson.util.FormValidation;
 import hudson.util.ListBoxModel;
-
-import java.io.File;
-import java.io.IOException;
-import java.io.PrintStream;
-
-import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.logging.Logger;
-
 import jenkins.tasks.SimpleBuildStep;
 import org.jenkinsci.Symbol;
 import org.kohsuke.stapler.AncestorInPath;
-
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.QueryParameter;
 import org.tmatesoft.svn.core.SVNException;
 
 import javax.annotation.Nonnull;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.logging.Logger;
 
 /**
  * The jenkins plugin wrapper is based off of (and on occasion copied verbatim
@@ -43,7 +40,7 @@ import javax.annotation.Nonnull;
  *
  * @author bsmith
  */
-public class SVNPublisher extends Notifier implements SimpleBuildStep {
+public class SVNPublisher extends Recorder implements SimpleBuildStep {
 
     public static final DescriptorImpl DESCRIPTOR = new DescriptorImpl();
     private static final Logger LOGGER = Logger.getLogger(SVNPublisher.class.getName());
@@ -115,6 +112,11 @@ public class SVNPublisher extends Notifier implements SimpleBuildStep {
         PrintStream buildLogger = taskListener.getLogger();
         try {
             EnvVars envVars = run.getEnvironment(taskListener);
+            if (!filePath.exists()) {
+                throw new IOException("io eroor");
+            }
+            FilePath filePath1 = new FilePath(filePath, "test1");
+            filePath1.act(new TargetFileCallable("create"));
             SVNWorker repo = new SVNWorker.Builder()
                     .svnUrl(Utils.replaceVars(envVars, this.svnUrl))
                     .workingCopy(filePath.getRemote())
