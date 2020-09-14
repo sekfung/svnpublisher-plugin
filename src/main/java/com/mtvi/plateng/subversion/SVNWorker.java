@@ -48,14 +48,14 @@ public class SVNWorker implements Serializable {
     private FilePath baseLocalDir;
     private String strategy;
 
-    private SVNWorker(String url, String workspace, Credentials credentials, String strategy) {
+    private SVNWorker(String url, String workspace, VirtualChannel virtualChannel, Credentials credentials, String strategy) {
         try {
-            FilePath workspacePath = new FilePath(new File(workspace));
-            initRepo(SVNURL.parseURIDecoded(url), credentials);
+            FilePath workspacePath = new FilePath(virtualChannel, workspace);
             this.workingCopy = new FilePath(workspacePath, Constants.PLUGIN_NAME);
             this.workSpace = workspacePath;
             this.baseLocalDir = workspacePath;
             this.strategy = strategy;
+            initRepo(SVNURL.parseURIDecoded(url), credentials);
         } catch (SVNException ex) {
             LOGGER.log(Level.SEVERE, ex.getMessage());
         }
@@ -85,6 +85,10 @@ public class SVNWorker implements Serializable {
 
     private static void cleanWorkspace(FilePath workspace) {
         try {
+            if (!workspace.exists()) {
+                LOGGER.info("workspace is not existed");
+                return;
+            }
             workspace.act(new TargetFileCallable("delete"));
         } catch (IOException | InterruptedException e) {
             LOGGER.info(e.getMessage());
@@ -157,6 +161,7 @@ public class SVNWorker implements Serializable {
     public static class Builder {
         private String url;
         private String workingCopy;
+        private VirtualChannel virtualChannel;
         private Credentials credentials;
         private String strategy = "always";
 
@@ -165,7 +170,8 @@ public class SVNWorker implements Serializable {
             return this;
         }
 
-        public Builder workingCopy(String workingCopy) {
+        public Builder workingCopy(String workingCopy, VirtualChannel virtualChannel) {
+            this.virtualChannel = virtualChannel;
             this.workingCopy = workingCopy;
             return this;
         }
@@ -187,12 +193,15 @@ public class SVNWorker implements Serializable {
             if (credentials == null) {
                 throw new IllegalArgumentException("credentials not found");
             }
-            return new SVNWorker(url, workingCopy,credentials, strategy);
+            if (virtualChannel == null || "".equalsIgnoreCase(workingCopy)) {
+                return new SVNWorker(url, credentials);
+            }
+            return new SVNWorker(url, workingCopy, virtualChannel, credentials, strategy);
         }
     }
 
     private static class CheckoutTask extends MasterToSlaveFileCallable<SVNPropertyData> implements Serializable {
-        private static final long serialVersionUID = 1L;
+        private static final long serialVersionUID = 2L;
         private SVNURL svnPath;
         private transient SVNClientManager manager;
 
@@ -215,15 +224,10 @@ public class SVNWorker implements Serializable {
             }
             return null;
         }
-
-        @Override
-        public void checkRoles(RoleChecker roleChecker) throws SecurityException {
-            roleChecker.check(this, Roles.SLAVE);
-        }
     }
 
     private static class AddTask implements FilePath.FileCallable<Boolean>, Serializable {
-        private static final long serialVersionUID = 1L;
+        private static final long serialVersionUID = 3L;
         private transient SVNClientManager manager;
 
         AddTask(SVNClientManager manager) {
@@ -252,7 +256,7 @@ public class SVNWorker implements Serializable {
     }
 
     private static class CopyFilesTask implements FilePath.FileCallable<List<File>>, Serializable {
-        private static final long serialVersionUID = 1L;
+        private static final long serialVersionUID = 4L;
         private transient SVNClientManager manager;
         private ImportItem item;
         private EnvVars envVars;
@@ -301,9 +305,9 @@ public class SVNWorker implements Serializable {
 
 
     private static class CommitTask implements FilePath.FileCallable<Boolean>, Serializable {
-        private static final long serialVersionUID = 1L;
+        private static final long serialVersionUID = 5L;
         private transient SVNClientManager manager;
-        private String commitMessage;
+        private transient String commitMessage;
 
         CommitTask(SVNClientManager manager, String commitMsg) {
             this.manager = manager;
