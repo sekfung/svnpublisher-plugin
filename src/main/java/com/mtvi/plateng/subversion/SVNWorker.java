@@ -6,6 +6,7 @@ import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.remoting.VirtualChannel;
 import hudson.scm.CredentialsSVNAuthenticationProviderImpl;
+import hudson.scm.SvnClientManager;
 import jenkins.MasterToSlaveFileCallable;
 import jenkins.security.Roles;
 import org.apache.commons.io.FileUtils;
@@ -40,8 +41,8 @@ import java.util.logging.Logger;
 public class SVNWorker implements Serializable {
     private static final long serialVersionUID = 1L;
     private static final Logger LOGGER = Logger.getLogger(SVNWorker.class.getName());
-    private transient SVNClientManager manager;
-    private transient SVNRepository repository;
+    private SvnClientManager manager;
+    private SVNRepository repository;
     private FilePath workingCopy;
     private FilePath workSpace;
     private String commitMessage = "";
@@ -79,7 +80,6 @@ public class SVNWorker implements Serializable {
         options = SVNWCUtil.createDefaultOptions(configDir, true);
 
         DAVRepositoryFactory.setup();
-        manager = SVNClientManager.newInstance(options, sam);
         repository = manager.createRepository(repoUrl, true);
     }
 
@@ -105,7 +105,7 @@ public class SVNWorker implements Serializable {
         this.commitMessage = commitMessage;
     }
 
-    public SVNClientManager getSVNManager() {
+    public SvnClientManager getSVNManager() {
         return this.manager;
     }
 
@@ -203,9 +203,9 @@ public class SVNWorker implements Serializable {
     private static class CheckoutTask extends MasterToSlaveFileCallable<SVNPropertyData> implements Serializable {
         private static final long serialVersionUID = 2L;
         private SVNURL svnPath;
-        private transient SVNClientManager manager;
+        private transient SvnClientManager manager;
 
-        CheckoutTask(SVNClientManager manager, SVNURL svnPath) {
+        CheckoutTask(SvnClientManager manager, SVNURL svnPath) {
             this.manager = manager;
             this.svnPath = svnPath;
         }
@@ -228,9 +228,9 @@ public class SVNWorker implements Serializable {
 
     private static class AddTask implements FilePath.FileCallable<Boolean>, Serializable {
         private static final long serialVersionUID = 3L;
-        private transient SVNClientManager manager;
+        private transient SvnClientManager manager;
 
-        AddTask(SVNClientManager manager) {
+        AddTask(SvnClientManager manager) {
             this.manager = manager;
         }
 
@@ -257,13 +257,13 @@ public class SVNWorker implements Serializable {
 
     private static class CopyFilesTask implements FilePath.FileCallable<List<File>>, Serializable {
         private static final long serialVersionUID = 4L;
-        private transient SVNClientManager manager;
+        private transient SvnClientManager manager;
         private ImportItem item;
         private EnvVars envVars;
         private String strategy;
         private FilePath workingCopy;
 
-        CopyFilesTask(SVNClientManager manager, ImportItem item, EnvVars vars, String strategy, FilePath workingCopy) {
+        CopyFilesTask(SvnClientManager manager, ImportItem item, EnvVars vars, String strategy, FilePath workingCopy) {
             this.manager = manager;
             this.item = item;
             this.envVars = vars;
@@ -306,10 +306,10 @@ public class SVNWorker implements Serializable {
 
     private static class CommitTask implements FilePath.FileCallable<Boolean>, Serializable {
         private static final long serialVersionUID = 5L;
-        private transient SVNClientManager manager;
+        private transient SvnClientManager manager;
         private transient String commitMessage;
 
-        CommitTask(SVNClientManager manager, String commitMsg) {
+        CommitTask(SvnClientManager manager, String commitMsg) {
             this.manager = manager;
             this.commitMessage = commitMsg;
         }
