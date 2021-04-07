@@ -115,11 +115,9 @@ public class SVNPublisher extends Recorder implements SimpleBuildStep {
             if (!filePath.exists()) {
                 throw new IOException("io error");
             }
-            FilePath filePath1 = new FilePath(filePath, "test1");
-            filePath1.act(new TargetFileCallable("create"));
             SVNWorker repo = new SVNWorker.Builder()
                     .svnUrl(Utils.replaceVars(envVars, this.svnUrl))
-                    .workingCopy(filePath.getRemote(), filePath.getChannel())
+                    .workingCopy(filePath.getRemote(), launcher)
                     .strategy(strategy)
                     .credentials(DescriptorImpl.lookupCredentials(this.svnUrl, run.getParent(), this.credentialsId))
                     .build();

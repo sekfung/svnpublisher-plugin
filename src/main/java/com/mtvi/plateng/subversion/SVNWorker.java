@@ -4,10 +4,10 @@ import com.cloudbees.plugins.credentials.Credentials;
 import com.google.common.collect.Lists;
 import hudson.EnvVars;
 import hudson.FilePath;
+import hudson.Launcher;
 import hudson.remoting.VirtualChannel;
 import hudson.scm.CredentialsSVNAuthenticationProviderImpl;
-import hudson.scm.SvnClientManager;
-import jenkins.MasterToSlaveFileCallable;
+import jenkins.security.MasterToSlaveCallable;
 import jenkins.security.Roles;
 import org.apache.commons.io.FileUtils;
 import org.jenkinsci.remoting.RoleChecker;
@@ -20,7 +20,9 @@ import org.tmatesoft.svn.core.internal.io.dav.DAVRepositoryFactory;
 import org.tmatesoft.svn.core.io.SVNRepository;
 import org.tmatesoft.svn.core.wc.*;
 
-import java.io.*;
+import java.io.File;
+import java.io.IOException;
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Level;
@@ -41,36 +43,43 @@ import java.util.logging.Logger;
 public class SVNWorker implements Serializable {
     private static final long serialVersionUID = 1L;
     private static final Logger LOGGER = Logger.getLogger(SVNWorker.class.getName());
-    private SvnClientManager manager;
+    private SVNClientManager manager;
     private SVNRepository repository;
-    private FilePath workingCopy;
-    private FilePath workSpace;
+    private File workingCopy;
     private String commitMessage = "";
-    private FilePath baseLocalDir;
+    private Launcher launcher;
+    private File baseLocalDir;
     private String strategy;
+    private Credentials credentials;
 
-    private SVNWorker(String url, String workspace, VirtualChannel virtualChannel, Credentials credentials, String strategy) {
+    private SVNWorker(String url, String workspace, Launcher launcher, Credentials credentials, String strategy) {
         try {
-            FilePath workspacePath = new FilePath(virtualChannel, workspace);
-            this.workingCopy = new FilePath(workspacePath, Constants.PLUGIN_NAME);
-            this.workSpace = workspacePath;
-            this.baseLocalDir = workspacePath;
+            File workSpaceFile = new File(workspace);
+            this.workingCopy = new File(workSpaceFile, Constants.PLUGIN_NAME);
+            this.baseLocalDir = workSpaceFile;
             this.strategy = strategy;
-            initRepo(SVNURL.parseURIDecoded(url), credentials);
+            this.credentials = credentials;
+            this.launcher = launcher;
+            initRepo(SVNURL.parseURIDecoded(url));
         } catch (SVNException ex) {
             LOGGER.log(Level.SEVERE, ex.getMessage());
         }
     }
     private SVNWorker(String url, Credentials credentials) {
         try {
-            initRepo(SVNURL.parseURIDecoded(url), credentials);
+            initRepo(SVNURL.parseURIDecoded(url));
         } catch (SVNException ex) {
             LOGGER.log(Level.SEVERE, ex.getMessage());
         }
     }
 
 
-    private void initRepo(SVNURL repoUrl, Credentials credentials) throws SVNException {
+    private void initRepo(SVNURL repoUrl) throws SVNException {
+        SVNClientManager manager = createManager();
+        repository = manager.createRepository(repoUrl, true);
+    }
+
+    public SVNClientManager createManager() {
         ISVNAuthenticationManager sam;
         ISVNOptions options;
 
@@ -80,17 +89,18 @@ public class SVNWorker implements Serializable {
         options = SVNWCUtil.createDefaultOptions(configDir, true);
 
         DAVRepositoryFactory.setup();
-        repository = manager.createRepository(repoUrl, true);
+        manager = SVNClientManager.newInstance(options, sam);
+        return manager;
     }
 
-    private static void cleanWorkspace(FilePath workspace) {
+    private static void cleanWorkspace(File workspace) {
         try {
             if (!workspace.exists()) {
-                LOGGER.info("workspace is not existed");
+                LOGGER.info("workspace is not existed: " + workspace.getName());
                 return;
             }
-            workspace.act(new TargetFileCallable("delete"));
-        } catch (IOException | InterruptedException e) {
+            FileUtils.deleteDirectory(workspace);
+        } catch (IOException e) {
             LOGGER.info(e.getMessage());
             e.printStackTrace();
         }
@@ -105,7 +115,7 @@ public class SVNWorker implements Serializable {
         this.commitMessage = commitMessage;
     }
 
-    public SvnClientManager getSVNManager() {
+    public SVNClientManager getSVNManager() {
         return this.manager;
     }
 
@@ -127,29 +137,31 @@ public class SVNWorker implements Serializable {
         try {
             cleanWorkspace(workingCopy);
             SVNURL svnPath = repository.getLocation();
-            workSpace.act(new CheckoutTask(manager, svnPath));
+            launcher.getChannel().call(new CheckoutTask(svnPath, workingCopy));
             for (ImportItem i : item) {
                 SVNURL svnDestination = svnPath.appendPath(i.getPath(), true);
                 SVNNodeKind pathType = repository.checkPath(getRelativePath(svnDestination, repository), repository.getLatestRevision());
-                FilePath dir = new FilePath(workingCopy, i.getPath());
+                File dir = new File(workingCopy, i.getPath());
                 if (pathType == SVNNodeKind.NONE) {
-                    dir.act(new AddTask(manager));
+                    launcher.getChannel().call(new AddTask(dir));
                 } else if (pathType == SVNNodeKind.DIR) {
-                    dir.act(new CheckoutTask(manager, svnDestination));
+                    launcher.getChannel().call(new CheckoutTask(svnPath, dir));
                 }
-                FilePath localPath = new FilePath(baseLocalDir, i.getLocalPath());
-                files.addAll(localPath.act(new CopyFilesTask(manager, i, envVars, strategy, dir)));
+                FilePath localPath = new FilePath(new FilePath(baseLocalDir), i.getLocalPath());
+                files.addAll(localPath.act(new CopyFilesTask(i, envVars, strategy, dir)));
             }
         } catch (SVNException e) {
             throw new SVNPublisherException("Error in repository " + e.getMessage());
         } catch (Exception ex1) {
             throw new SVNPublisherException(ex1);
+        } catch (Throwable throwable) {
+            throwable.printStackTrace();
         }
         return files;
     }
 
     public void commit() throws IOException, InterruptedException {
-        workingCopy.act(new CommitTask(manager, commitMessage));
+        workingCopy.act(new CommitTask(commitMessage));
     }
 
     public void dispose() {
@@ -161,7 +173,7 @@ public class SVNWorker implements Serializable {
     public static class Builder {
         private String url;
         private String workingCopy;
-        private VirtualChannel virtualChannel;
+        private Launcher launcher;
         private Credentials credentials;
         private String strategy = "always";
 
@@ -170,8 +182,8 @@ public class SVNWorker implements Serializable {
             return this;
         }
 
-        public Builder workingCopy(String workingCopy, VirtualChannel virtualChannel) {
-            this.virtualChannel = virtualChannel;
+        public Builder workingCopy(String workingCopy, Launcher launcher) {
+            this.launcher = launcher;
             this.workingCopy = workingCopy;
             return this;
         }
@@ -193,26 +205,27 @@ public class SVNWorker implements Serializable {
             if (credentials == null) {
                 throw new IllegalArgumentException("credentials not found");
             }
-            if (virtualChannel == null || "".equalsIgnoreCase(workingCopy)) {
+            if (launcher == null || "".equalsIgnoreCase(workingCopy)) {
                 return new SVNWorker(url, credentials);
             }
-            return new SVNWorker(url, workingCopy, virtualChannel, credentials, strategy);
+            return new SVNWorker(url, workingCopy, launcher, credentials, strategy);
         }
     }
 
-    private static class CheckoutTask extends MasterToSlaveFileCallable<SVNPropertyData> implements Serializable {
+    private class CheckoutTask extends MasterToSlaveCallable<SVNPropertyData, Throwable> {
         private static final long serialVersionUID = 2L;
         private SVNURL svnPath;
-        private transient SvnClientManager manager;
+        private File file;
 
-        CheckoutTask(SvnClientManager manager, SVNURL svnPath) {
-            this.manager = manager;
+        CheckoutTask(SVNURL svnPath, File file) {
             this.svnPath = svnPath;
+            this.file = file;
         }
 
         @Override
-        public SVNPropertyData invoke(File file, VirtualChannel virtualChannel) throws IOException, InterruptedException {
+        public SVNPropertyData call() throws Throwable {
             try {
+                SVNClientManager manager = createManager();
                 if (!file.exists()) {
                     throw new IOException("io exception");
                 }
@@ -226,20 +239,23 @@ public class SVNWorker implements Serializable {
         }
     }
 
-    private static class AddTask implements FilePath.FileCallable<Boolean>, Serializable {
+    private  class AddTask extends MasterToSlaveCallable<Boolean, Throwable> {
         private static final long serialVersionUID = 3L;
-        private transient SvnClientManager manager;
 
-        AddTask(SvnClientManager manager) {
-            this.manager = manager;
+        private File file;
+
+        AddTask(File file) {
+            this.file = file;
         }
 
+
         @Override
-        public Boolean invoke(File file, VirtualChannel virtualChannel) throws IOException, InterruptedException {
+        public Boolean call() throws Throwable {
             if (!file.exists() && !file.mkdirs()) {
                 throw new IOException("mkdir file failed: " + file.getName());
             }
             try {
+                SVNClientManager manager = createManager();
                 manager.getWCClient().doAdd(file, false, true, false, SVNDepth.INFINITY, false, false, true);
             } catch (SVNException e) {
                 LOGGER.info(e.getMessage());
@@ -248,31 +264,25 @@ public class SVNWorker implements Serializable {
             }
             return true;
         }
-
-        @Override
-        public void checkRoles(RoleChecker roleChecker) throws SecurityException {
-            roleChecker.check(this, Roles.SLAVE);
-        }
     }
 
-    private static class CopyFilesTask implements FilePath.FileCallable<List<File>>, Serializable {
+    private  class CopyFilesTask extends MasterToSlaveCallable<List<File>, Throwable> {
         private static final long serialVersionUID = 4L;
-        private transient SvnClientManager manager;
         private ImportItem item;
         private EnvVars envVars;
         private String strategy;
         private FilePath workingCopy;
 
-        CopyFilesTask(SvnClientManager manager, ImportItem item, EnvVars vars, String strategy, FilePath workingCopy) {
-            this.manager = manager;
+        CopyFilesTask(ImportItem item, EnvVars vars, String strategy, FilePath localPath) {
             this.item = item;
             this.envVars = vars;
             this.strategy = strategy;
-            this.workingCopy = workingCopy;
+            this.workingCopy = localPath;
         }
 
+
         @Override
-        public List<File> invoke(File file, VirtualChannel virtualChannel) throws IOException, InterruptedException {
+        public List<File> call() throws Throwable {
             List<File> files = new ArrayList<>();
             String[] params = item.getParams().split(",");
             //  empty params equals always commit
@@ -280,9 +290,10 @@ public class SVNWorker implements Serializable {
                 params = new String[]{""};
             }
             try {
-                List<File> filesToCopy = Utils.findFilesWithPattern(new FilePath(file), item.getPattern(), params, envVars);
+                SVNClientManager manager = createManager();
+                List<File> filesToCopy = Utils.findFilesWithPattern(workingCopy, item.getPattern(), params, envVars);
                 for (File f : filesToCopy) {
-                    File wc = new File(workingCopy.getRemote(), f.getName());
+                    File wc = new File(workingCopy, f.getName());
                     boolean toAdd = !wc.exists();
                     FileUtils.copyFile(new File(file, f.getName()), wc);
                     if (toAdd) {
@@ -296,20 +307,15 @@ public class SVNWorker implements Serializable {
             }
             return files;
         }
-
-        @Override
-        public void checkRoles(RoleChecker roleChecker) throws SecurityException {
-            roleChecker.check(this, Roles.SLAVE);
-        }
     }
 
 
-    private static class CommitTask implements FilePath.FileCallable<Boolean>, Serializable {
+    private class CommitTask implements FilePath.FileCallable<Boolean>, Serializable {
         private static final long serialVersionUID = 5L;
-        private transient SvnClientManager manager;
+        private transient SVNClientManager manager;
         private transient String commitMessage;
 
-        CommitTask(SvnClientManager manager, String commitMsg) {
+        CommitTask( String commitMsg) {
             this.manager = manager;
             this.commitMessage = commitMsg;
         }
@@ -317,6 +323,7 @@ public class SVNWorker implements Serializable {
         @Override
         public Boolean invoke(File file, VirtualChannel virtualChannel) throws IOException, InterruptedException {
             try {
+                SVNClientManager svnClientManager = createManager();
                 SVNCommitClient commit = manager.getCommitClient();
                 SVNCommitPacket a = commit.doCollectCommitItems(new File[]{file}, false, true, SVNDepth.INFINITY, null);
                 commit.doCommit(a, false, commitMessage);
