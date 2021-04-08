@@ -119,6 +119,7 @@ public class SVNPublisher extends Recorder implements SimpleBuildStep {
                     .svnUrl(Utils.replaceVars(envVars, this.svnUrl))
                     .workingCopy(filePath.getRemote(), launcher)
                     .strategy(strategy)
+                    .launcher(launcher)
                     .credentials(DescriptorImpl.lookupCredentials(this.svnUrl, run.getParent(), this.credentialsId))
                     .build();
             if (Constants.NEVER_COMMIT.equalsIgnoreCase(strategy)) {
@@ -136,6 +137,8 @@ public class SVNPublisher extends Recorder implements SimpleBuildStep {
             } catch (SVNPublisherException ex) {
                 buildLogger.println(ex.getMessage());
                 throw new AbortException(ex.getMessage());
+            } catch (Throwable throwable) {
+                throwable.printStackTrace();
             } finally {
                 repo.dispose();
             }

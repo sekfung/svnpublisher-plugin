@@ -147,8 +147,8 @@ public class SVNWorker implements Serializable {
                 } else if (pathType == SVNNodeKind.DIR) {
                     launcher.getChannel().call(new CheckoutTask(svnPath, dir));
                 }
-                FilePath localPath = new FilePath(new FilePath(baseLocalDir), i.getLocalPath());
-                files.addAll(localPath.act(new CopyFilesTask(i, envVars, strategy, dir)));
+                File localPath = new File(baseLocalDir, i.getLocalPath());
+                files.addAll(launcher.getChannel().call(new CopyFilesTask(i, envVars, strategy, new FilePath(dir), localPath)));
             }
         } catch (SVNException e) {
             throw new SVNPublisherException("Error in repository " + e.getMessage());
@@ -160,8 +160,8 @@ public class SVNWorker implements Serializable {
         return files;
     }
 
-    public void commit() throws IOException, InterruptedException {
-        workingCopy.act(new CommitTask(commitMessage));
+    public void commit() throws Throwable {
+        launcher.getChannel().call(new CommitTask(commitMessage, workingCopy));
     }
 
     public void dispose() {
@@ -195,6 +195,11 @@ public class SVNWorker implements Serializable {
 
         public Builder strategy(String strategy) {
             this.strategy = strategy;
+            return this;
+        }
+
+        public Builder launcher(Launcher launcher) {
+            this.launcher = launcher;
             return this;
         }
 
@@ -272,12 +277,14 @@ public class SVNWorker implements Serializable {
         private EnvVars envVars;
         private String strategy;
         private FilePath workingCopy;
+        private File file;
 
-        CopyFilesTask(ImportItem item, EnvVars vars, String strategy, FilePath localPath) {
+        CopyFilesTask(ImportItem item, EnvVars vars, String strategy, FilePath workingCopy, File file) {
             this.item = item;
             this.envVars = vars;
             this.strategy = strategy;
-            this.workingCopy = localPath;
+            this.workingCopy = workingCopy;
+            this.file = file;
         }
 
 
@@ -291,9 +298,9 @@ public class SVNWorker implements Serializable {
             }
             try {
                 SVNClientManager manager = createManager();
-                List<File> filesToCopy = Utils.findFilesWithPattern(workingCopy, item.getPattern(), params, envVars);
+                List<File> filesToCopy = Utils.findFilesWithPattern(new FilePath(file), item.getPattern(), params, envVars);
                 for (File f : filesToCopy) {
-                    File wc = new File(workingCopy, f.getName());
+                    File wc = new File(workingCopy.getRemote(), f.getName());
                     boolean toAdd = !wc.exists();
                     FileUtils.copyFile(new File(file, f.getName()), wc);
                     if (toAdd) {
@@ -310,18 +317,20 @@ public class SVNWorker implements Serializable {
     }
 
 
-    private class CommitTask implements FilePath.FileCallable<Boolean>, Serializable {
+    private class CommitTask extends MasterToSlaveCallable<Boolean, Throwable> {
         private static final long serialVersionUID = 5L;
-        private transient SVNClientManager manager;
         private transient String commitMessage;
+        private File file;
 
-        CommitTask( String commitMsg) {
-            this.manager = manager;
+
+        CommitTask(String commitMsg, File file) {
             this.commitMessage = commitMsg;
+            this.file = file;
         }
 
+
         @Override
-        public Boolean invoke(File file, VirtualChannel virtualChannel) throws IOException, InterruptedException {
+        public Boolean call() throws Throwable {
             try {
                 SVNClientManager svnClientManager = createManager();
                 SVNCommitClient commit = manager.getCommitClient();
@@ -333,11 +342,6 @@ public class SVNWorker implements Serializable {
                 e.printStackTrace();
             }
             return false;
-        }
-
-        @Override
-        public void checkRoles(RoleChecker roleChecker) throws SecurityException {
-            roleChecker.check(this, Roles.SLAVE);
         }
     }
 
